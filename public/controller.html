@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#141821">
+<title>Poly Drift Controller</title>
+<link rel="icon" href="data:,">
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  [hidden] { display: none !important; }
+  html, body {
+    margin: 0; height: 100%; overflow: hidden; overscroll-behavior: none;
+    background: #141821; color: #fff;
+    font-family: system-ui, -apple-system, sans-serif;
+    -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+  }
+  body { padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+
+  /* Join screen */
+  #joinScreen { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 24px; }
+  #joinScreen h1 { margin: 0; font-style: italic; letter-spacing: 1px; }
+  #joinScreen h1 span { color: #ffd23f; }
+  #name { font-size: 22px; padding: 12px 16px; border-radius: 12px; border: 2px solid #3a4254; background: #1f2430; color: #fff; width: min(320px, 100%); text-align: center; -webkit-user-select: text; user-select: text; }
+  .bigbtn { font-size: 22px; font-weight: 800; padding: 14px 40px; border: 0; border-radius: 14px; background: #ffd23f; color: #141821; }
+  #joinMsg { opacity: .7; min-height: 1.2em; text-align: center; }
+
+  /* Controller */
+  #pad { height: 100%; display: flex; flex-direction: column; touch-action: none; }
+  #bar { display: flex; align-items: center; gap: 12px; padding: 8px 14px; background: #1f2430; border-bottom: 4px solid var(--car, #888); }
+  #who { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 18px; }
+  #who .dot { width: 18px; height: 18px; border-radius: 5px; background: var(--car, #888); }
+  #status { flex: 1; text-align: center; font-weight: 700; font-size: 18px; }
+  #startBtn { font-size: 16px; font-weight: 800; padding: 8px 18px; border: 0; border-radius: 10px; background: #2ed573; color: #0d2a17; }
+
+  #controls { flex: 1; display: flex; gap: 12px; padding: 12px; }
+  .btn {
+    flex: 1; border-radius: 18px; background: #262d3b; border: 3px solid #3a4254;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 30px; font-weight: 900; letter-spacing: 1px; color: #cfd6e4;
+    transition: transform .05s, background .05s;
+  }
+  .btn.down { background: var(--car, #555); border-color: #fff; color: #fff; transform: scale(.97); }
+  #controls.both .btn.down { background: #ff4757; }
+  .btn svg { width: 44%; max-width: 90px; fill: currentColor; }
+
+  #bump { position: fixed; inset: 0; pointer-events: none; box-shadow: inset 0 0 0 0 #ff4757; transition: box-shadow .25s; }
+  #bump.on { box-shadow: inset 0 0 0 14px #ff4757; transition: none; }
+
+  #help { text-align: center; padding: 0 0 10px; font-size: 14px; opacity: .55; }
+  #rotate { display: none; }
+  @media (orientation: portrait) {
+    #rotate { display: block; text-align: center; padding: 6px; font-size: 13px; opacity: .6; }
+    .btn { font-size: 20px; }
+  }
+</style>
+</head>
+<body>
+
+<div id="joinScreen">
+  <h1>POLY <span>DRIFT</span></h1>
+  <input id="name" maxlength="12" placeholder="Your name" autocomplete="off" autocapitalize="words" enterkeyhint="go">
+  <button class="bigbtn" id="joinBtn">JOIN</button>
+  <div id="joinMsg"></div>
+</div>
+
+<div id="pad" hidden>
+  <div id="bar">
+    <div id="who"><span class="dot"></span><span id="myName"></span></div>
+    <div id="status">Connecting…</div>
+    <button id="startBtn" hidden>START</button>
+  </div>
+  <div id="rotate">Turn your phone sideways ↻</div>
+  <div id="controls">
+    <div class="btn" data-btn="left"><svg viewBox="0 0 24 24"><path d="M16 3 5 12l11 9z"/></svg></div>
+    <div class="btn" data-btn="right"><svg viewBox="0 0 24 24"><path d="M8 3l11 9-11 9z"/></svg></div>
+  </div>
+  <div id="help">Hold one to turn · press both to stop and shoot</div>
+</div>
+<div id="bump"></div>
+
+<script>
+'use strict';
+
+const $ = (id) => document.getElementById(id);
+
+// Stable per-phone id so a dropped connection rejoins as the same car.
+// (crypto.randomUUID needs HTTPS, which a LAN game usually doesn't have.)
+function storage(key, make) {
+  try {
+    let v = localStorage.getItem(key);
+    if (!v && make) { v = make(); localStorage.setItem(key, v); }
+    return v;
+  } catch { return make ? make() : null; }
+}
+const playerId = storage('pr_id', () => Math.random().toString(36).slice(2) + Date.now().toString(36));
+$('name').value = storage('pr_name') || '';
+
+let ws = null;
+let joined = false;
+let myName = '';
+
+function join() {
+  myName = $('name').value.trim() || 'Player';
+  try { localStorage.setItem('pr_name', myName); } catch {}
+  $('name').blur();
+  joined = true;
+  $('joinScreen').hidden = true;
+  $('pad').hidden = false;
+  $('myName').textContent = myName;
+  connect();
+}
+$('joinBtn').addEventListener('click', join);
+$('name').addEventListener('keydown', (e) => { if (e.key === 'Enter') join(); });
+
+function connect() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}/ws?role=player`);
+  ws.onopen = () => {
+    send({ t: 'join', id: playerId, name: myName });
+    sendInput(true);
+  };
+  ws.onmessage = (e) => onMessage(JSON.parse(e.data));
+  ws.onclose = (e) => {
+    if (e.code === 4001) { setStatus('Joined from another tab'); return; }
+    setStatus('Reconnecting…');
+    setTimeout(connect, 1000);
+  };
+}
+
+function send(msg) {
+  if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
+}
+
+function setStatus(text) { $('status').textContent = text; }
+
+function onMessage(msg) {
+  switch (msg.t) {
+    case 'host':
+      if (!msg.online) setStatus('Waiting for the TV…');
+      break;
+    case 'full':
+      setStatus('Game is full (8 players)');
+      break;
+    case 'welcome':
+      document.documentElement.style.setProperty('--car', msg.color);
+      break;
+    case 'status':
+      $('startBtn').hidden = msg.phase !== 'lobby';
+      if (msg.phase === 'lobby') setStatus('Warm-up! Hit START when everyone is in');
+      else if (msg.phase === 'results') setStatus(msg.matchWinner ? `${msg.matchWinner} wins!` : 'Game over — check the TV!');
+      else if (msg.out) setStatus('You are out 💀  ·  watch the TV');
+      else if (!msg.inLevel) setStatus('You join next game');
+      else if (msg.phase === 'levelover') setStatus(msg.outcome);
+      else if (msg.phase === 'countdown') setStatus(`Level ${msg.level} · get ready…`);
+      else if (msg.finished) setStatus('Made it! ✅');
+      else if (!msg.alive) setStatus('Shot! 💥');
+      else setStatus(`Level ${msg.level} · find the green! ${msg.timeLeft}s`);
+      break;
+    case 'buzz':
+      $('bump').classList.add('on');
+      setTimeout(() => $('bump').classList.remove('on'), 60);
+      if (navigator.vibrate) navigator.vibrate(200);
+      break;
+  }
+}
+
+$('startBtn').addEventListener('click', () => send({ t: 'start' }));
+
+// ---- Input ------------------------------------------------------------------
+// Recompute which buttons are held from *all* active touches on every touch
+// event. That handles multi-touch (both buttons at once) and sliding a thumb from
+// left to right without lifting it.
+
+const held = new Set();
+let lastSent = '';
+
+function buttonsAt(points) {
+  const set = new Set();
+  for (const p of points) {
+    const el = document.elementFromPoint(p.clientX, p.clientY);
+    const btn = el && el.closest('[data-btn]');
+    if (btn) set.add(btn.dataset.btn);
+  }
+  return set;
+}
+
+function applyHeld(set) {
+  held.clear();
+  set.forEach((b) => held.add(b));
+  document.querySelectorAll('[data-btn]').forEach((el) => el.classList.toggle('down', held.has(el.dataset.btn)));
+  $('controls').classList.toggle('both', held.has('left') && held.has('right'));
+  sendInput();
+}
+
+function sendInput(force) {
+  const msg = {
+    t: 'input',
+    l: held.has('left') ? 1 : 0,
+    r: held.has('right') ? 1 : 0,
+  };
+  const key = JSON.stringify(msg);
+  if (!force && key === lastSent) return;
+  lastSent = key;
+  send(msg);
+}
+// Resend periodically in case a message was dropped while reconnecting.
+setInterval(() => sendInput(true), 1000);
+
+const controls = $('controls');
+for (const type of ['touchstart', 'touchmove', 'touchend', 'touchcancel']) {
+  controls.addEventListener(type, (e) => {
+    e.preventDefault();
+    applyHeld(buttonsAt(e.touches));
+  }, { passive: false });
+}
+
+// Mouse fallback so you can test from a laptop browser.
+let mouseDown = false;
+controls.addEventListener('mousedown', (e) => { mouseDown = true; applyHeld(buttonsAt([e])); });
+controls.addEventListener('mousemove', (e) => { if (mouseDown) applyHeld(buttonsAt([e])); });
+addEventListener('mouseup', () => { mouseDown = false; applyHeld(new Set()); });
+
+// Losing focus (notification, app switch) must release everything.
+addEventListener('blur', () => applyHeld(new Set()));
+document.addEventListener('visibilitychange', () => { if (document.hidden) applyHeld(new Set()); });
+
+// Block iOS pinch-zoom and rubber-band scrolling on the controller.
+document.addEventListener('gesturestart', (e) => e.preventDefault());
+document.addEventListener('touchmove', (e) => { if (joined) e.preventDefault(); }, { passive: false });
+
+</script>
+</body>
+</html>

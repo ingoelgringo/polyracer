@@ -1,36 +1,53 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Poly Drift
 
-## Getting Started
+A couch party game. The TV shows a field of Voronoi polygons and the phones are the controllers. On level 1 every polygon stands still. From level 2 the light grey cells bounce around inside the frame, and the cells around them change shape as they pass. Everyone starts level 1 in the middle of the map. Reach the green cell in the black frame around the edge before the clock runs out.
 
-First, run the development server:
+- **Light grey** cells are fast, **grey** is normal speed and **dark grey** is very slow. Most cells are grey. The dark and light grey ones are scattered at random.
+- From level 4, **red** cells bounce around too. Fly into one and you die, just like being shot.
+- A ship that dies throws shrapnel in 8 directions. Shrapnel kills like a bullet, so one death can set off a chain.
+- Each ship leaves a trail of where it has flown. The trail fades after a few seconds.
+- **Black** cells make up the frame. You can fly into them, but only at a crawl. Bullets fly straight through. One of them is the **green** goal. The screen edge is the only real wall.
+- From level 2, black cells spread onto the field too, a few more each level. The number of cells never changes, only how many of them are black.
+- Once you reach the green cell you park there and wait for the others. When the clock runs out, anyone who hasn't made it is out.
+- The next level starts in that cell. It turns **blue** and a new green cell appears somewhere else.
+- Ships always move forward. They turn instantly, with no drift.
+- Get to a green cell in time without being shot and you're through to the next level. Anyone else is out.
+- If nobody makes it, the same players replay from the same blue cell with a new goal. When only one player is left, that player wins.
+- The clock gets tighter, the dark grey and black ground spreads and more red cells appear with each level.
+
+Controls are two buttons:
+
+- Hold **◀** or **▶** to turn.
+- Press **both** to stop dead and fire one shot straight ahead. You stay stopped while you hold both.
+
+## Run
 
 ```bash
-npm run dev
+npm install
+npm run dev          # development, with hot reload
 # or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm run build && npm start
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+1. Open `http://localhost:3000/` on the computer connected to the TV (fullscreen it with F11).
+2. Players scan the QR code with their phones. The phones must be on the same Wi-Fi.
+3. Everyone flies around the warm-up arena while people join. Anyone presses **START** to begin.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+No phone handy? Press **K** on the TV to add a ship flown with ← →. Press **J** to add one flown with A D. Press both keys together to shoot. **Enter** starts the match.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+If the QR code shows the wrong address (VM, Docker, several network cards), set it yourself:
 
-## Learn More
+```bash
+PUBLIC_URL=http://192.168.1.50:3000 npm run dev
+```
 
-To learn more about Next.js, take a look at the following resources:
+## How it works
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- `server.js` runs Next.js and relays WebSocket messages on `/ws`. It runs no game logic.
+- `src/game/game.ts` is the game: ships, bullets, levels, elimination and rendering. The TV is the authority.
+- `src/game/course.ts` is the Voronoi map: generation, the bouncing sites, terrain types, the frame and the start and goal cells.
+- `src/app/Canvas/Canvas.tsx` mounts the game and draws the lobby and results screens.
+- `public/controller.html` (served at `/play`) is the phone pad. It sends `{l, r}` (left/right held) when they change.
+- A phone keeps its player id in `localStorage`. After a Wi-Fi blip it rejoins as the same ship.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Tuning constants live at the top of `game.ts` (time limit, turn rate, bullets) and `course.ts` (cell spacing, how much of each terrain there is per level, when red cells arrive, bounce speeds, and the speed of each terrain in `CELL_SPEED`).
