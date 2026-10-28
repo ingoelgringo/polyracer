@@ -1,4 +1,4 @@
-# Poly Drift
+# Polyracer
 
 A couch party game. The TV shows a field of Voronoi polygons and the phones are the controllers. On level 1 every polygon stands still. From level 2 the light grey cells bounce around inside the frame, and the cells around them change shape as they pass. Everyone starts level 1 in the middle of the map. Reach the green cell in the black frame around the edge before the clock runs out.
 

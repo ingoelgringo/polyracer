@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Poly Drift",
+  title: "Polyracer",
   description: "Couch party game: race from the middle to a green cell before time runs out, last player left wins.",
 };
 
