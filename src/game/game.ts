@@ -638,14 +638,6 @@ export class Game {
     ctx.strokeStyle = "#fff";
     ctx.stroke();
     ctx.restore();
-
-    ctx.font = "bold 15px system-ui, sans-serif";
-    ctx.textAlign = "center";
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = "rgba(0,0,0,0.7)";
-    ctx.strokeText(p.name, s.x, s.y - 22);
-    ctx.fillStyle = "#fff";
-    ctx.fillText(p.name, s.x, s.y - 22);
   }
 
   private drawTrail(p: Player) {
