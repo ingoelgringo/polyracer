@@ -18,8 +18,8 @@ const SPAWN_RING = 45; // players start on a small ring around the middle
 const SLOT_GAP = 26; // spacing of ships lined up in a start or goal cell
 const PARK_EASE = 6; // how quickly a finished ship glides into its spot in the goal
 
-const FIRE_COOLDOWN = 0.35;
-const BULLET_SPEED = 470;
+const FIRE_COOLDOWN = 2; // s between shots; both buttons still stop the ship meanwhile
+const BULLET_SPEED = 340;
 const BULLET_LIFE = 2.6;
 const SHRAPNEL_LIFE = 1.2; // a dying ship throws 8 of these, and they kill like bullets
 

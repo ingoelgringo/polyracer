@@ -6,11 +6,11 @@ export const H = 900;
 
 const SPACING = 90; // average distance between the inner Voronoi sites
 const JITTER = 0.75; // how far sites stray from their grid position (share of SPACING)
-const FRAME_INSET = 35; // frame sites sit on a ring this far in from the screen edge
-const FRAME_STEP = 90; // distance between frame sites along that ring
+const FRAME_INSET = 50; // frame sites sit on a ring this far in from the screen edge
+const FRAME_STEP = 120; // distance between frame sites along that ring
 // Inner sites bounce off a box this far inside the frame ring, so no inner cell
 // ever reaches the screen edge and the black frame stays closed.
-const FRAME_GAP = 40;
+const FRAME_GAP = 55;
 const BOUNCE_MIN = 25; // px/s, how fast light grey sites bounce around (from level 2)
 const BOUNCE_MAX = 55;
 const DANGER_MIN = 40; // px/s, how fast red sites bounce around
@@ -39,13 +39,13 @@ const CORNER_KEEPOUT = 140; // goals are never this close to a corner
 export type Cell = "black" | "goal" | "start" | "fast" | "normal" | "slow" | "danger";
 
 export const CELL_SPEED: Record<Cell, number> = {
-  fast: 230,
-  normal: 150,
-  slow: 65,
-  goal: 150,
-  start: 150,
-  danger: 150,
-  black: 30,
+  fast: 175,
+  normal: 115,
+  slow: 50,
+  goal: 115,
+  start: 115,
+  danger: 115,
+  black: 23,
 };
 
 const CELL_FILL: Record<Cell, string> = {
