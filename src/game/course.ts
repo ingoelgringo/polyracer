@@ -4,7 +4,7 @@ import { Delaunay } from "d3-delaunay";
 export const W = 1600;
 export const H = 900;
 
-const SPACING = 90; // average distance between the inner Voronoi sites
+const SPACING = 115; // average distance between the inner Voronoi sites
 const JITTER = 0.75; // how far sites stray from their grid position (share of SPACING)
 const FRAME_INSET = 50; // frame sites sit on a ring this far in from the screen edge
 const FRAME_STEP = 120; // distance between frame sites along that ring
