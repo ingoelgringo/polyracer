@@ -7,6 +7,7 @@
 <meta name="theme-color" content="#141821">
 <title>Polyracer Controller</title>
 <link rel="icon" href="data:,">
+<link rel="manifest" href="/controller.webmanifest">
 <style>
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   [hidden] { display: none !important; }
@@ -57,7 +58,7 @@
 <body>
 
 <div id="joinScreen">
-  <h1>POLY <span>DRIFT</span></h1>
+  <h1>POLY <span>RACER</span></h1>
   <input id="name" maxlength="12" placeholder="Your name" autocomplete="off" autocapitalize="words" enterkeyhint="go">
   <button class="bigbtn" id="joinBtn">JOIN</button>
   <div id="joinMsg"></div>
@@ -98,7 +99,20 @@ let ws = null;
 let joined = false;
 let myName = '';
 
+// Fullscreen and landscape lock need a tap, so they run on JOIN and START. Android
+// honours both; iPhone Safari has no fullscreen for pages, there it takes "Add to
+// Home Screen" (the manifest opens the controller fullscreen from the icon).
+function goFullscreen() {
+  const el = document.documentElement;
+  const req = el.requestFullscreen || el.webkitRequestFullscreen;
+  if (!req || document.fullscreenElement || document.webkitFullscreenElement) return;
+  Promise.resolve(req.call(el, { navigationUI: 'hide' }))
+    .then(() => screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape'))
+    .catch(() => {});
+}
+
 function join() {
+  goFullscreen();
   myName = $('name').value.trim() || 'Player';
   try { localStorage.setItem('pr_name', myName); } catch {}
   $('name').blur();
@@ -162,7 +176,7 @@ function onMessage(msg) {
   }
 }
 
-$('startBtn').addEventListener('click', () => send({ t: 'start' }));
+$('startBtn').addEventListener('click', () => { goFullscreen(); send({ t: 'start' }); });
 
 // ---- Input ------------------------------------------------------------------
 // Recompute which buttons are held from *all* active touches on every touch

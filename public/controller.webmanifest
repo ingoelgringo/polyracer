@@ -1,0 +1,9 @@
+{
+  "name": "Polyracer Controller",
+  "short_name": "Polyracer",
+  "start_url": "/play",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#141821",
+  "theme_color": "#141821"
+}

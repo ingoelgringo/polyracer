@@ -16,6 +16,25 @@ export default function Canvas() {
     return () => game.stop(); // stop the loop and socket if the component unmounts
   }, []);
 
+  // Browsers only allow fullscreen from a click or key press, so the first one goes
+  // fullscreen. After that F toggles it (Esc still leaves, as always).
+  useEffect(() => {
+    const enter = () => {
+      if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => {});
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") return;
+      if (e.key.toLowerCase() === "f" && document.fullscreenElement) document.exitFullscreen();
+      else enter();
+    };
+    addEventListener("pointerdown", enter);
+    addEventListener("keydown", onKey);
+    return () => {
+      removeEventListener("pointerdown", enter);
+      removeEventListener("keydown", onKey);
+    };
+  }, []);
+
   return (
     <>
       <canvas ref={canvasRef} className={styles.canvas} />
@@ -23,7 +42,7 @@ export default function Canvas() {
       {ui?.phase === "lobby" && (
         <div className={styles.overlay}>
           <div className={styles.card}>
-            <h1>POLY <span>DRIFT</span></h1>
+            <h1>POLY <span>RACER</span></h1>
             <p className={styles.sub}>Grab your phone. Scan to join.</p>
             <div className={styles.join}>
               <div>
@@ -45,7 +64,8 @@ export default function Canvas() {
                   Hold one button to turn. Press <b>both</b> to stop and shoot.<br />
                   Miss the clock or get shot and you&apos;re out. Last player left wins.<br />
                   Press <b>START</b> on any phone (or <kbd>Enter</kbd> here).<br />
-                  No phone? <kbd>K</kbd> joins with ← →, <kbd>J</kbd> joins with A D.
+                  No phone? <kbd>K</kbd> joins with ← →, <kbd>J</kbd> joins with A D.<br />
+                  <kbd>F</kbd> toggles fullscreen.
                 </div>
               </div>
             </div>
