@@ -11,10 +11,10 @@ const FRAME_STEP = 120; // distance between frame sites along that ring
 // Inner sites bounce off a box this far inside the frame ring, so no inner cell
 // ever reaches the screen edge and the black frame stays closed.
 const FRAME_GAP = 55;
-const BOUNCE_MIN = 25; // px/s, how fast light grey sites bounce around (from level 2)
-const BOUNCE_MAX = 55;
-const DANGER_MIN = 40; // px/s, how fast red sites bounce around
-const DANGER_MAX = 75;
+const BOUNCE_MIN = 15; // px/s, how fast light grey sites bounce around (from level 2)
+const BOUNCE_MAX = 40;
+const DANGER_MIN = 25; // px/s, how fast red sites bounce around
+const DANGER_MAX = 55;
 const FAST_SHARE = 0.12; // share of inner cells that are light grey
 const SLOW_SHARE_START = 0.1; // share of inner cells that are dark grey on level 1…
 const SLOW_SHARE_STEP = 0.04; // …growing this much each level…

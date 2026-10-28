@@ -13,9 +13,9 @@ const TIME_FACTOR_STEP = 0.2; // shaved off each level
 const TIME_FACTOR_MIN = 1.6;
 
 const SHIP_TURN = 3.4; // rad/s. No drift: the ship always moves where its nose points.
-const SHIP_RADIUS = 13;
+const SHIP_RADIUS = 10;
 const SPAWN_RING = 45; // players start on a small ring around the middle
-const SLOT_GAP = 26; // spacing of ships lined up in a start or goal cell
+const SLOT_GAP = 21; // spacing of ships lined up in a start or goal cell
 const PARK_EASE = 6; // how quickly a finished ship glides into its spot in the goal
 
 const FIRE_COOLDOWN = 2; // s between shots; both buttons still stop the ship meanwhile
@@ -461,7 +461,7 @@ export class Game {
     if (both && !s.stopped && s.fireCd <= 0) {
       s.fireCd = FIRE_COOLDOWN;
       this.bullets.push({
-        x: s.x + Math.cos(s.a) * 20, y: s.y + Math.sin(s.a) * 20, a: s.a,
+        x: s.x + Math.cos(s.a) * 15, y: s.y + Math.sin(s.a) * 15, a: s.a,
         owner: p, credit: p, life: BULLET_LIFE, shrapnel: false,
       });
     }
@@ -627,10 +627,10 @@ export class Game {
     ctx.shadowColor = s.stopped ? "#fff" : p.color;
     ctx.shadowBlur = s.stopped ? 22 : 12;
     ctx.beginPath();
-    ctx.moveTo(18, 0);
-    ctx.lineTo(-12, -11);
-    ctx.lineTo(-6, 0);
-    ctx.lineTo(-12, 11);
+    ctx.moveTo(14, 0);
+    ctx.lineTo(-9, -8);
+    ctx.lineTo(-5, 0);
+    ctx.lineTo(-9, 8);
     ctx.closePath();
     ctx.fillStyle = p.color;
     ctx.fill();
