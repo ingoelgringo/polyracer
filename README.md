@@ -47,7 +47,7 @@ PUBLIC_URL=http://192.168.1.50:3000 npm run dev
 
 ## Settings
 
-Join with the name **ingo** and a ⚙ button appears on the phone. It opens sliders for ground speeds, ship turn rate and size, the trail, bullets, how long it takes to get back to full speed after a shot, shrapnel, the number of polygons, how fast the light grey and red cells move, the polygon dots (show them, and give them new positions at the start of every level) and the time limit. Tap a slider's number to type the value on the keypad instead. Changes apply right away. A new number of polygons takes effect in the lobby.
+Join with the name **ingo** and a ⚙ button appears on the phone. It opens sliders for ground speeds, ship turn rate and size, the trail, bullets, how long it takes to get back to full speed after a shot, shrapnel, the number of polygons, how fast the light grey and red cells move, the polygon dots (show them, and give them new positions at the start of every level) and the time limit. Tap a slider's number to type the value on the keypad instead. The game pauses on the TV while the settings are open. Changes apply right away. A new number of polygons takes effect in the lobby.
 
 - **Default** goes back to the saved default.
 - **Set default** makes the current settings the new default.

@@ -164,6 +164,7 @@ function connect() {
   ws.onopen = () => {
     send({ t: 'join', id: playerId, name: myName });
     sendInput(true);
+    if (!$('settings').hidden) send({ t: 'settings', action: 'open' });
   };
   ws.onmessage = (e) => onMessage(JSON.parse(e.data));
   ws.onclose = (e) => {
@@ -338,8 +339,9 @@ function settingsAction(action, text) {
   $('setMsg').textContent = text;
 }
 
-$('setBtn').addEventListener('click', () => { applyHeld(new Set()); $('settings').hidden = false; });
-$('setClose').addEventListener('click', () => { $('settings').hidden = true; });
+// The TV pauses the game while the settings are open.
+$('setBtn').addEventListener('click', () => { applyHeld(new Set()); $('settings').hidden = false; send({ t: 'settings', action: 'open' }); });
+$('setClose').addEventListener('click', () => { $('settings').hidden = true; send({ t: 'settings', action: 'close' }); });
 $('setReset').addEventListener('click', () => settingsAction('reset', 'Back to the default.'));
 $('setSave').addEventListener('click', () => {
   if (confirm('Make the current settings the new default?')) settingsAction('saveDefault', 'Saved as the new default.');

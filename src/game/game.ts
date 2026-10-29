@@ -94,6 +94,7 @@ export class Game {
   private matchWinner: Player | null = null;
   private soloLevels: number | null = null;
   private keys = new Set<string>();
+  private pausedBy = new Set<string>(); // admin phones with the settings open; the game stands still meanwhile
 
   private ws: WebSocket | null = null;
   private stopped = false;
@@ -190,6 +191,7 @@ export class Game {
     switch (msg.t) {
       case "join": {
         const p = this.players.get(msg.id);
+        this.pausedBy.delete(msg.id); // a fresh page starts with the settings closed
         if (p) p.name = msg.name || p.name;
         else this.addPlayer(msg.id, msg.name || "Player");
         this.sendTo(msg.id, { t: "welcome", color: this.players.get(msg.id)!.color });
@@ -217,10 +219,13 @@ export class Game {
 
   // action: "set" one key, "reset" to the defaults, "saveDefault" makes the current
   // values the defaults, "factory" goes back to what settings.ts says.
+  // "open" and "close" pause and resume the game while the settings are on screen.
   private onSettings(id: string, msg: { action?: string; key?: string; value?: number }) {
     const p = this.players.get(id);
     if (!p || !isAdmin(p.name)) return;
-    if (msg.action === "set" && msg.key) this.changeSettings(clean({ ...settings, [msg.key]: msg.value }, settings));
+    if (msg.action === "open") this.pausedBy.add(id);
+    else if (msg.action === "close") this.pausedBy.delete(id);
+    else if (msg.action === "set" && msg.key) this.changeSettings(clean({ ...settings, [msg.key]: msg.value }, settings));
     else if (msg.action === "reset") this.changeSettings(this.defaults);
     else if (msg.action === "factory") this.changeSettings(FACTORY);
     else if (msg.action === "saveDefault") {
@@ -312,6 +317,7 @@ export class Game {
 
   private removePlayer(id: string) {
     this.players.delete(id);
+    this.pausedBy.delete(id);
     this.bullets = this.bullets.filter((b) => b.owner.id !== id);
     if (this.players.size === 0 && this.phase !== "lobby") this.backToLobby();
     this.emitUi();
@@ -457,7 +463,7 @@ export class Game {
     if (this.stopped) return;
     const dt = Math.min(0.05, this.lastFrame ? (now - this.lastFrame) / 1000 : 0);
     this.lastFrame = now;
-    this.update(dt);
+    if (this.pausedBy.size === 0) this.update(dt);
     this.render();
     this.raf = requestAnimationFrame(this.frame);
   };
@@ -724,6 +730,20 @@ export class Game {
     ctx.restore();
 
     this.drawHud();
+    if (this.pausedBy.size > 0) this.drawPaused();
+  }
+
+  private drawPaused() {
+    const ctx = this.ctx;
+    ctx.fillStyle = "rgba(0,0,0,0.5)";
+    ctx.fillRect(0, 0, W, H);
+    ctx.textAlign = "center";
+    ctx.font = "900 72px system-ui, sans-serif";
+    ctx.fillStyle = "#fff";
+    ctx.fillText("PAUSED", W / 2, H / 2 + 10);
+    ctx.font = "bold 24px system-ui, sans-serif";
+    ctx.fillStyle = "rgba(255,255,255,0.8)";
+    ctx.fillText("Settings are open", W / 2, H / 2 + 50);
   }
 
   private drawShip(p: Player, s: Ship) {
