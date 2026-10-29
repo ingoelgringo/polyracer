@@ -41,6 +41,7 @@ interface Ship {
   stopped: boolean; // both buttons held
   pivot: boolean; // came out of a stop with one button still held: turn on the spot until it's let go
   fireCd: number;
+  recover: number; // 1 right after a shot, down to 0 as speed builds back up
   respawnT: number;
 }
 
@@ -325,7 +326,7 @@ export class Game {
     const r = n <= 1 ? 0 : SPAWN_RING;
     return {
       x: W / 2 + Math.cos(a) * r, y: H / 2 + Math.sin(a) * r, a,
-      alive: true, finished: false, stopped: false, pivot: false, fireCd: 0, respawnT: 0,
+      alive: true, finished: false, stopped: false, pivot: false, fireCd: 0, recover: 0, respawnT: 0,
     };
   }
 
@@ -533,6 +534,7 @@ export class Game {
     // Both buttons: stop dead and fire once straight ahead.
     if (both && !s.stopped && s.fireCd <= 0) {
       s.fireCd = settings.fireCooldown;
+      s.recover = 1;
       const nose = 15 * settings.shipSize;
       this.bullets.push({
         x: s.x + Math.cos(s.a) * nose, y: s.y + Math.sin(s.a) * nose, a: s.a,
@@ -541,12 +543,13 @@ export class Game {
     }
     s.stopped = both;
     if (both) { s.pivot = true; return; }
+    s.recover = settings.shotRecover > 0 ? Math.max(0, s.recover - dt / settings.shotRecover) : 0;
 
     if (p.input.l) s.a -= settings.shipTurn * dt;
     if (p.input.r) s.a += settings.shipTurn * dt;
     if (!p.input.l && !p.input.r) s.pivot = false;
     if (s.pivot) return;
-    const speed = cellSpeed(this.course.cellAt(s.x, s.y));
+    const speed = cellSpeed(this.course.cellAt(s.x, s.y)) * (1 - s.recover);
     const start = this.course.start;
     if (this.phase === "race" && start >= 0 && this.course.siteAt(s.x, s.y) === start) {
       // The blue cell is open towards the field only: its other walls still bounce you.

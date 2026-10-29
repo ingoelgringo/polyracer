@@ -275,15 +275,16 @@ export class Course {
     ctx.fill();
     ctx.restore();
 
-    // The sites the cells are computed from.
+    // The sites the cells are computed from. Not in the frame (start and goal included).
     if (!settings.showSites) return;
     ctx.beginPath();
     for (let i = 0; i < this.siteCount(); i++) {
+      if (this.isFrame(i)) continue;
       const { x, y } = this.site(i);
-      ctx.moveTo(x + 2.5, y);
-      ctx.arc(x, y, 2.5, 0, Math.PI * 2);
+      ctx.moveTo(x + 1.5, y);
+      ctx.arc(x, y, 1.5, 0, Math.PI * 2);
     }
-    ctx.fillStyle = "rgba(255, 255, 255, 0.6)";
+    ctx.fillStyle = "rgba(255, 255, 255, 0.45)";
     ctx.fill();
   }
 }

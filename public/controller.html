@@ -64,6 +64,9 @@
   .setRow input[type=checkbox] { width: 26px; height: 26px; accent-color: #ffd23f; }
   .setRow .val { flex: 0 0 82px; text-align: right; font-variant-numeric: tabular-nums; font-size: 14px; opacity: .85; }
   .setRow.changed .val { color: #ffd23f; opacity: 1; }
+  .setRow button.val { padding: 6px 4px; border: 0; border-bottom: 1px dashed #5a6378; background: none; color: inherit; font-family: inherit; }
+  /* 16px or iOS zooms in when it gets focus */
+  .setRow .num { flex: 0 0 82px; width: 82px; box-sizing: border-box; padding: 6px; border: 1px solid #ffd23f; border-radius: 6px; background: #0d1017; color: #fff; font-size: 16px; text-align: right; }
 
   #help { text-align: center; padding: 0 0 10px; font-size: 14px; opacity: .55; }
   #rotate { display: none; }
@@ -221,6 +224,7 @@ let values = {};
 let defaults = {};
 let dragging = null; // key of the slider under a finger; don't yank it back meanwhile
 let dragTimer = 0;
+let editing = null; // key of the number being typed in
 const rows = {};
 
 const decimals = (step) => (String(step).split('.')[1] || '').length;
@@ -252,8 +256,9 @@ function buildSettings() {
     const input = document.createElement('input');
     input.id = 'set_' + s.key;
     label.htmlFor = input.id;
-    const val = document.createElement('span');
+    const val = document.createElement(s.bool ? 'span' : 'button');
     val.className = 'val';
+    let num = null;
     if (s.bool) {
       input.type = 'checkbox';
       input.addEventListener('change', () => change(s, input.checked ? 1 : 0));
@@ -261,10 +266,24 @@ function buildSettings() {
       input.type = 'range';
       input.min = s.min; input.max = s.max; input.step = s.step;
       input.addEventListener('input', () => change(s, Number(input.value)));
+      // Tap the number to type it in instead, for when the slider is too fiddly.
+      num = document.createElement('input');
+      num.className = 'num';
+      num.type = 'text';
+      num.inputMode = 'decimal';
+      num.hidden = true;
+      val.type = 'button';
+      val.addEventListener('click', () => startEdit(s));
+      num.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') num.blur();
+        if (e.key === 'Escape') { num.value = ''; num.blur(); }
+      });
+      num.addEventListener('blur', () => endEdit(s));
     }
     row.append(label, input, val);
+    if (num) row.appendChild(num);
     list.appendChild(row);
-    rows[s.key] = { row, input, val };
+    rows[s.key] = { row, input, val, num };
   }
 }
 
@@ -277,6 +296,33 @@ function showSetting(s) {
   }
   r.val.textContent = fmt(s, s.key === dragging ? Number(r.input.value) : v);
   r.row.classList.toggle('changed', v !== defaults[s.key]);
+}
+
+function startEdit(s) {
+  const r = rows[s.key];
+  editing = s.key;
+  r.num.value = values[s.key].toFixed(decimals(s.step));
+  r.val.hidden = true;
+  r.num.hidden = false;
+  r.num.focus();
+  r.num.select();
+}
+
+// Empty or not a number leaves the value as it was. Otherwise snap it to the slider.
+function endEdit(s) {
+  const r = rows[s.key];
+  if (editing !== s.key) return;
+  editing = null;
+  r.num.hidden = true;
+  r.val.hidden = false;
+  const typed = parseFloat(r.num.value.replace(',', '.'));
+  if (!isNaN(typed)) {
+    const steps = Math.round((Math.min(s.max, Math.max(s.min, typed)) - s.min) / s.step);
+    const v = Math.min(s.max, Number((s.min + steps * s.step).toFixed(decimals(s.step))));
+    r.input.value = v;
+    change(s, v);
+  }
+  showSetting(s);
 }
 
 function change(s, v) {

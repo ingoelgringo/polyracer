@@ -18,7 +18,7 @@ A couch party game. The TV shows a field of Voronoi polygons and the phones are 
 Controls are two buttons:
 
 - Hold **◀** or **▶** to turn.
-- Press **both** to stop dead and fire one shot straight ahead. You stay stopped while you hold both.
+- Press **both** to stop dead and fire one shot straight ahead. You stay stopped while you hold both. After a shot it takes a moment to get back up to full speed.
 
 ## Run
 
@@ -43,7 +43,7 @@ PUBLIC_URL=http://192.168.1.50:3000 npm run dev
 
 ## Settings
 
-Join with the name **ingo** and a ⚙ button appears on the phone. It opens sliders for ground speeds, ship turn rate and size, the trail, bullets, shrapnel, the number of polygons, how fast the light grey and red cells move, the polygon dots and the time limit. Changes apply right away. A new number of polygons takes effect in the lobby.
+Join with the name **ingo** and a ⚙ button appears on the phone. It opens sliders for ground speeds, ship turn rate and size, the trail, bullets, how long it takes to get back to full speed after a shot, shrapnel, the number of polygons, how fast the light grey and red cells move, the polygon dots and the time limit. Tap a slider's number to type the value on the keypad instead. Changes apply right away. A new number of polygons takes effect in the lobby.
 
 - **Default** goes back to the saved default.
 - **Set default** makes the current settings the new default.

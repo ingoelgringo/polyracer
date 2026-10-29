@@ -30,6 +30,7 @@ export const SETTINGS: SettingDef[] = [
 
   { key: "fireCooldown", group: "Bullets", label: "Time between shots", min: 0, max: 10, step: 0.1, def: 2, unit: "s" },
   { key: "bulletSpeed", group: "Bullets", label: "Speed", min: 50, max: 1000, step: 10, def: 280, unit: "px/s" },
+  { key: "shotRecover", group: "Bullets", label: "Back to full speed after a shot", min: 0, max: 3, step: 0.1, def: 0.6, unit: "s" },
 
   { key: "shrapnelCount", group: "Shrapnel", label: "Pieces", min: 0, max: 32, step: 1, def: 8 },
   { key: "shrapnelSpeed", group: "Shrapnel", label: "Speed", min: 50, max: 1000, step: 10, def: 340, unit: "px/s" },
