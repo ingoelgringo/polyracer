@@ -1,6 +1,9 @@
-import { CELL_SPEED, Course, H, W } from "./course";
+import { cellSpeed, Course, H, W } from "./course";
+import { addDot, addLine, addOutline } from "./draw";
+import { clean, FACTORY, isAdmin, settings, SETTINGS, Values } from "./settings";
 
 // ---- Tuning -------------------------------------------------------------------
+// Speeds, sizes and the like that can be changed from a phone live in settings.ts.
 
 const COUNTDOWN = 3;
 const LEVEL_OVER_TIME = 3.5;
@@ -12,20 +15,14 @@ const TIME_FACTOR_START = 3.2;
 const TIME_FACTOR_STEP = 0.2; // shaved off each level
 const TIME_FACTOR_MIN = 1.6;
 
-const SHIP_TURN = 3.4; // rad/s. No drift: the ship always moves where its nose points.
-const SHIP_RADIUS = 10;
+const SHIP_RADIUS = 8; // at size 1. No drift: the ship always moves where its nose points.
 const SPAWN_RING = 45; // players start on a small ring around the middle
 const SLOT_GAP = 21; // spacing of ships lined up in a start or goal cell
 const PARK_EASE = 6; // how quickly a finished ship glides into its spot in the goal
 
-const FIRE_COOLDOWN = 2; // s between shots; both buttons still stop the ship meanwhile
-const BULLET_SPEED = 340;
-const BULLET_LIFE = 2.6;
-const SHRAPNEL_LIFE = 1.2; // a dying ship throws 8 of these, and they kill like bullets
-
-const TRAIL_LIFE = 4; // seconds before a bit of a ship's track has faded out
 const TRAIL_STEP = 6; // px between trail points
 const TRAIL_JUMP = 40; // a gap this big is a respawn, not flight: don't connect it
+const SHIP_SHAPE = [[11, 0], [-7, -6], [-4, 0], [-7, 6]]; // pointing along +x, at size 1
 
 // No green: that's the goal colour.
 const COLORS = ["#ff4757", "#1e90ff", "#ffa502", "#a55eea", "#00d2d3", "#ff6b81", "#eccc68", "#f368e0"];
@@ -75,7 +72,7 @@ const KEYBOARD = [
   { id: "keyboard2", name: "AD", key: "j", left: "a", right: "d" },
 ];
 
-// Probe points around the hull that must stay on screen.
+// Probe points around the hull that must stay on screen, at size 1.
 const HULL = [[0, 0], [16, 0], [-10, -10], [-10, 10]];
 
 // ---- Game ---------------------------------------------------------------------
@@ -108,6 +105,7 @@ export class Game {
   private scale = 1;
   private offX = 0;
   private offY = 0;
+  private defaults: Values = { ...FACTORY }; // what the Default button goes back to
 
   constructor(private canvas: HTMLCanvasElement, private onUi: (ui: UiState) => void) {
     this.ctx = canvas.getContext("2d")!;
@@ -172,7 +170,19 @@ export class Game {
     }
   }
 
-  private onMessage(msg: { t: string; id: string; name?: string; l?: number; r?: number }) {
+  private onMessage(msg: {
+    t: string; id?: string; name?: string; l?: number; r?: number;
+    key?: string; value?: number; values?: Values; defaults?: Values;
+  }) {
+    // The server's own messages have no id; everything a phone sends is stamped with one.
+    if (!msg.id) {
+      if (msg.t === "savedSettings") {
+        this.defaults = clean(msg.defaults, FACTORY);
+        this.changeSettings(clean(msg.values, this.defaults), false);
+      }
+      return;
+    }
+    if (msg.t === "settings") return this.onSettings(msg.id, msg);
     switch (msg.t) {
       case "join": {
         const p = this.players.get(msg.id);
@@ -180,6 +190,9 @@ export class Game {
         else this.addPlayer(msg.id, msg.name || "Player");
         this.sendTo(msg.id, { t: "welcome", color: this.players.get(msg.id)!.color });
         this.sendStatus(this.players.get(msg.id)!);
+        if (isAdmin(this.players.get(msg.id)!.name)) {
+          this.sendTo(msg.id, { t: "settings", schema: SETTINGS, values: settings, defaults: this.defaults });
+        }
         break;
       }
       case "leave":
@@ -193,6 +206,37 @@ export class Game {
       case "start":
         if (this.phase === "lobby") this.startMatch();
         break;
+    }
+  }
+
+  // ---- Settings (from the admin phone) ---------------------------------------------
+
+  // action: "set" one key, "reset" to the defaults, "saveDefault" makes the current
+  // values the defaults, "factory" goes back to what settings.ts says.
+  private onSettings(id: string, msg: { action?: string; key?: string; value?: number }) {
+    const p = this.players.get(id);
+    if (!p || !isAdmin(p.name)) return;
+    if (msg.action === "set" && msg.key) this.changeSettings(clean({ ...settings, [msg.key]: msg.value }, settings));
+    else if (msg.action === "reset") this.changeSettings(this.defaults);
+    else if (msg.action === "factory") this.changeSettings(FACTORY);
+    else if (msg.action === "saveDefault") {
+      this.defaults = { ...settings };
+      this.changeSettings(settings);
+    }
+  }
+
+  private changeSettings(values: Values, save = true) {
+    Object.assign(settings, values);
+    // A new number of polygons needs a new map, which only happens in the lobby.
+    if (this.phase === "lobby" && this.course.builtCells !== settings.cells) {
+      this.course.build();
+      this.course.setup(1, -1);
+    }
+    if (save && this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({ t: "saveSettings", values: settings, defaults: this.defaults }));
+    }
+    for (const p of this.players.values()) {
+      if (isAdmin(p.name)) this.sendTo(p.id, { t: "settings", values: settings, defaults: this.defaults });
     }
   }
 
@@ -322,8 +366,9 @@ export class Game {
     this.retry = false;
     const from = start >= 0 ? this.course.site(start) : { x: W / 2, y: H / 2 };
     const goal = this.course.site(this.course.goal);
-    const factor = Math.max(TIME_FACTOR_MIN, TIME_FACTOR_START - TIME_FACTOR_STEP * (this.level - 1));
-    this.timeLeft = Math.ceil((Math.hypot(goal.x - from.x, goal.y - from.y) / CELL_SPEED.normal) * factor + 2);
+    const factor = Math.max(TIME_FACTOR_MIN, TIME_FACTOR_START - TIME_FACTOR_STEP * (this.level - 1)) * settings.timeScale;
+    const speed = Math.max(1, settings.speedNormal);
+    this.timeLeft = Math.ceil((Math.hypot(goal.x - from.x, goal.y - from.y) / speed) * factor + 2);
 
     const list = [...this.players.values()];
     for (const p of list) p.ship = null;
@@ -438,7 +483,7 @@ export class Game {
   }
 
   private hitsWall(x: number, y: number, a: number) {
-    const c = Math.cos(a), s = Math.sin(a);
+    const k = settings.shipSize, c = Math.cos(a) * k, s = Math.sin(a) * k;
     return HULL.some(([dx, dy]) => this.course.isOutside(x + dx * c - dy * s, y + dx * s + dy * c));
   }
 
@@ -459,18 +504,19 @@ export class Game {
     const both = p.input.l && p.input.r;
     // Both buttons: stop dead and fire once straight ahead.
     if (both && !s.stopped && s.fireCd <= 0) {
-      s.fireCd = FIRE_COOLDOWN;
+      s.fireCd = settings.fireCooldown;
+      const nose = 15 * settings.shipSize;
       this.bullets.push({
-        x: s.x + Math.cos(s.a) * 15, y: s.y + Math.sin(s.a) * 15, a: s.a,
-        owner: p, credit: p, life: BULLET_LIFE, shrapnel: false,
+        x: s.x + Math.cos(s.a) * nose, y: s.y + Math.sin(s.a) * nose, a: s.a,
+        owner: p, credit: p, life: settings.bulletLife, shrapnel: false,
       });
     }
     s.stopped = both;
     if (both) return;
 
-    if (p.input.l) s.a -= SHIP_TURN * dt;
-    if (p.input.r) s.a += SHIP_TURN * dt;
-    const speed = CELL_SPEED[this.course.cellAt(s.x, s.y)];
+    if (p.input.l) s.a -= settings.shipTurn * dt;
+    if (p.input.r) s.a += settings.shipTurn * dt;
+    const speed = cellSpeed(this.course.cellAt(s.x, s.y));
     const dx = Math.cos(s.a) * speed * dt, dy = Math.sin(s.a) * speed * dt;
 
     // Black cells are just very slow; the screen edge is the wall. Slide along it.
@@ -497,13 +543,14 @@ export class Game {
 
   private collideShips() {
     const ships = this.contenders().map((p) => p.ship!).filter((s) => s.alive && !s.finished);
+    const r = SHIP_RADIUS * settings.shipSize;
     for (let i = 0; i < ships.length; i++) {
       for (let j = i + 1; j < ships.length; j++) {
         const a = ships[i], b = ships[j];
         const dx = b.x - a.x, dy = b.y - a.y;
         const d = Math.hypot(dx, dy);
-        if (d === 0 || d > SHIP_RADIUS * 2) continue;
-        const nx = dx / d, ny = dy / d, push = (SHIP_RADIUS * 2 - d) / 2;
+        if (d === 0 || d > r * 2) continue;
+        const nx = dx / d, ny = dy / d, push = (r * 2 - d) / 2;
         if (!this.hitsWall(a.x - nx * push, a.y - ny * push, a.a)) { a.x -= nx * push; a.y -= ny * push; }
         if (!this.hitsWall(b.x + nx * push, b.y + ny * push, b.a)) { b.x += nx * push; b.y += ny * push; }
       }
@@ -512,9 +559,10 @@ export class Game {
 
   private stepBullets(dt: number) {
     for (const b of this.bullets) {
+      const speed = b.shrapnel ? settings.shrapnelSpeed : settings.bulletSpeed;
       b.life -= dt;
-      b.x += Math.cos(b.a) * BULLET_SPEED * dt;
-      b.y += Math.sin(b.a) * BULLET_SPEED * dt;
+      b.x += Math.cos(b.a) * speed * dt;
+      b.y += Math.sin(b.a) * speed * dt;
       if (this.course.isOutside(b.x, b.y)) {
         b.life = 0;
         this.burst(b.x, b.y, b.owner.color, 8);
@@ -523,7 +571,7 @@ export class Game {
       for (const p of this.players.values()) {
         const s = p.ship;
         if (p === b.owner || !s?.alive || s.finished) continue;
-        if (Math.hypot(s.x - b.x, s.y - b.y) < SHIP_RADIUS + 3) {
+        if (Math.hypot(s.x - b.x, s.y - b.y) < SHIP_RADIUS * settings.shipSize + 3) {
           b.life = 0;
           if (this.phase === "lobby" || this.phase === "race") this.kill(p, b.credit);
           break;
@@ -541,8 +589,9 @@ export class Game {
     s.respawnT = LOBBY_RESPAWN;
     if (this.phase === "race" && by && by !== p) by.kills++;
     this.burst(s.x, s.y, p.color, 40);
-    for (let k = 0; k < 8; k++) {
-      this.bullets.push({ x: s.x, y: s.y, a: (k * Math.PI) / 4, owner: p, credit: by, life: SHRAPNEL_LIFE, shrapnel: true });
+    const n = settings.shrapnelCount;
+    for (let k = 0; k < n; k++) {
+      this.bullets.push({ x: s.x, y: s.y, a: (k * Math.PI * 2) / n, owner: p, credit: by, life: settings.shrapnelLife, shrapnel: true });
     }
     this.sendTo(p.id, { t: "buzz" });
     this.broadcastStatus();
@@ -571,12 +620,12 @@ export class Game {
   private addTrail(p: Player, s: Ship) {
     const last = p.trail[p.trail.length - 1];
     const d = last ? Math.hypot(s.x - last.x, s.y - last.y) : Infinity;
-    if (d >= TRAIL_STEP) p.trail.push({ x: s.x, y: s.y, t: this.time, cut: d > TRAIL_JUMP });
+    if (d >= TRAIL_STEP && settings.trailLife > 0) p.trail.push({ x: s.x, y: s.y, t: this.time, cut: d > TRAIL_JUMP });
   }
 
   private stepTrails() {
     for (const p of this.players.values()) {
-      const old = p.trail.findIndex((q) => this.time - q.t < TRAIL_LIFE);
+      const old = p.trail.findIndex((q) => this.time - q.t < settings.trailLife);
       if (old !== 0) p.trail.splice(0, old < 0 ? p.trail.length : old);
     }
   }
@@ -624,52 +673,39 @@ export class Game {
     ctx.save();
     ctx.translate(s.x, s.y);
     ctx.rotate(s.a);
-    ctx.shadowColor = s.stopped ? "#fff" : p.color;
-    ctx.shadowBlur = s.stopped ? 22 : 12;
+    ctx.scale(settings.shipSize, settings.shipSize);
     ctx.beginPath();
-    ctx.moveTo(14, 0);
-    ctx.lineTo(-9, -8);
-    ctx.lineTo(-5, 0);
-    ctx.lineTo(-9, 8);
+    SHIP_SHAPE.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
     ctx.closePath();
     ctx.fillStyle = p.color;
     ctx.fill();
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = "#fff";
-    ctx.stroke();
+    ctx.beginPath();
+    addOutline(ctx, SHIP_SHAPE, 1);
+    ctx.fillStyle = "#fff";
+    ctx.fill();
     ctx.restore();
   }
 
   private drawTrail(p: Player) {
     const ctx = this.ctx;
-    ctx.strokeStyle = p.color;
-    ctx.lineWidth = 3;
-    ctx.lineCap = "round";
+    ctx.fillStyle = p.color;
     for (let i = 1; i < p.trail.length; i++) {
       const a = p.trail[i - 1], b = p.trail[i];
       if (b.cut) continue;
-      ctx.globalAlpha = 0.8 * (1 - (this.time - a.t) / TRAIL_LIFE);
+      ctx.globalAlpha = Math.max(0, 0.8 * (1 - (this.time - a.t) / settings.trailLife));
       ctx.beginPath();
-      ctx.moveTo(a.x, a.y);
-      ctx.lineTo(b.x, b.y);
-      ctx.stroke();
+      addLine(ctx, a.x, a.y, b.x, b.y, 3);
+      addDot(ctx, b.x, b.y, 1.5);
+      ctx.fill();
     }
     ctx.globalAlpha = 1;
-    ctx.lineCap = "butt";
   }
 
   private drawBullet(b: Bullet) {
     const ctx = this.ctx;
-    const len = b.shrapnel ? 10 : 16;
-    ctx.beginPath();
-    ctx.moveTo(b.x - Math.cos(b.a) * len, b.y - Math.sin(b.a) * len);
-    ctx.lineTo(b.x, b.y);
-    ctx.strokeStyle = b.owner.color;
-    ctx.lineWidth = b.shrapnel ? 3 : 4;
-    ctx.stroke();
     ctx.beginPath();
     ctx.arc(b.x, b.y, b.shrapnel ? 3 : 4, 0, Math.PI * 2);
-    ctx.fillStyle = "#fff";
+    ctx.fillStyle = b.owner.color;
     ctx.fill();
   }
 

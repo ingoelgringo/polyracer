@@ -41,6 +41,16 @@ If the QR code shows the wrong address (VM, Docker, several network cards), set 
 PUBLIC_URL=http://192.168.1.50:3000 npm run dev
 ```
 
+## Settings
+
+Join with the name **ingo** and a ⚙ button appears on the phone. It opens sliders for ground speeds, ship turn rate and size, the trail, bullets, shrapnel, the number of polygons, how fast the light grey and red cells move, the polygon dots and the time limit. Changes apply right away. A new number of polygons takes effect in the lobby.
+
+- **Default** goes back to the saved default.
+- **Set default** makes the current settings the new default.
+- **Factory** goes back to the values in `src/game/settings.ts`.
+
+The server saves the settings in `settings.json`, so both TV pages share them and they survive restarts.
+
 ## How it works
 
 - `server.js` runs Next.js and relays WebSocket messages on `/ws`. It runs no game logic.

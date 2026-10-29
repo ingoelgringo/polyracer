@@ -47,6 +47,23 @@
   #bump { position: fixed; inset: 0; pointer-events: none; box-shadow: inset 0 0 0 0 #ff4757; transition: box-shadow .25s; }
   #bump.on { box-shadow: inset 0 0 0 14px #ff4757; transition: none; }
 
+  /* Settings (only for the admin name, see src/game/settings.ts) */
+  #setBtn { font-size: 20px; padding: 6px 12px; border: 0; border-radius: 10px; background: #3a4254; color: #fff; }
+  #settings { position: fixed; inset: 0; z-index: 10; display: flex; flex-direction: column; background: #141821; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+  #setHead { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 14px; background: #1f2430; }
+  #setHead h2 { flex: 1; margin: 0; font-size: 20px; }
+  #setHead button { font-size: 15px; font-weight: 700; padding: 8px 12px; border: 0; border-radius: 10px; background: #3a4254; color: #fff; }
+  #setHead #setClose { background: #ffd23f; color: #141821; }
+  #setMsg { width: 100%; font-size: 13px; opacity: .7; min-height: 1.2em; }
+  #setList { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 4px 14px 24px; }
+  #setList h3 { margin: 18px 0 6px; font-size: 13px; text-transform: uppercase; letter-spacing: 1px; opacity: .55; }
+  .setRow { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px solid #262d3b; }
+  .setRow label { flex: 0 0 38%; font-size: 15px; }
+  .setRow input[type=range] { flex: 1; min-width: 0; accent-color: #ffd23f; height: 28px; }
+  .setRow input[type=checkbox] { width: 26px; height: 26px; accent-color: #ffd23f; }
+  .setRow .val { flex: 0 0 82px; text-align: right; font-variant-numeric: tabular-nums; font-size: 14px; opacity: .85; }
+  .setRow.changed .val { color: #ffd23f; opacity: 1; }
+
   #help { text-align: center; padding: 0 0 10px; font-size: 14px; opacity: .55; }
   #rotate { display: none; }
   @media (orientation: portrait) {
@@ -68,6 +85,7 @@
   <div id="bar">
     <div id="status">Connecting…</div>
     <button id="startBtn" hidden>START</button>
+    <button id="setBtn" hidden aria-label="Settings">⚙</button>
   </div>
   <div id="rotate">Turn your phone sideways ↻</div>
   <div id="controls">
@@ -77,6 +95,18 @@
   <div id="help">Hold one to turn · press both to stop and shoot</div>
 </div>
 <div id="bump"></div>
+
+<div id="settings" hidden>
+  <div id="setHead">
+    <h2>Settings</h2>
+    <button id="setReset">Default</button>
+    <button id="setSave">Set default</button>
+    <button id="setFactory">Factory</button>
+    <button id="setClose">Done</button>
+    <div id="setMsg">Changes apply right away. Yellow = differs from the default.</div>
+  </div>
+  <div id="setList"></div>
+</div>
 
 <script>
 'use strict';
@@ -168,6 +198,9 @@ function onMessage(msg) {
       else if (!msg.alive) setStatus('Shot! 💥');
       else setStatus(`Level ${msg.level} · find the green! ${msg.timeLeft}s`);
       break;
+    case 'settings':
+      onSettings(msg);
+      break;
     case 'buzz':
       $('bump').classList.add('on');
       setTimeout(() => $('bump').classList.remove('on'), 60);
@@ -177,6 +210,98 @@ function onMessage(msg) {
 }
 
 $('startBtn').addEventListener('click', () => { goFullscreen(); send({ t: 'start' }); });
+
+// ---- Settings -----------------------------------------------------------------
+// The TV only sends these to a phone with the admin name. It sends the schema once
+// on join, then the values and defaults after every change.
+
+let schema = null;
+let values = {};
+let defaults = {};
+let dragging = null; // key of the slider under a finger; don't yank it back meanwhile
+let dragTimer = 0;
+const rows = {};
+
+const decimals = (step) => (String(step).split('.')[1] || '').length;
+const fmt = (s, v) => s.bool ? (v ? 'On' : 'Off') : v.toFixed(decimals(s.step)) + (s.unit ? ' ' + s.unit : '');
+
+function onSettings(msg) {
+  if (msg.schema) { schema = msg.schema; buildSettings(); }
+  values = msg.values;
+  defaults = msg.defaults;
+  $('setBtn').hidden = !schema;
+  if (schema) for (const s of schema) showSetting(s);
+}
+
+function buildSettings() {
+  const list = $('setList');
+  list.innerHTML = '';
+  let group = '';
+  for (const s of schema) {
+    if (s.group !== group) {
+      group = s.group;
+      const h = document.createElement('h3');
+      h.textContent = group;
+      list.appendChild(h);
+    }
+    const row = document.createElement('div');
+    row.className = 'setRow';
+    const label = document.createElement('label');
+    label.textContent = s.label;
+    const input = document.createElement('input');
+    input.id = 'set_' + s.key;
+    label.htmlFor = input.id;
+    const val = document.createElement('span');
+    val.className = 'val';
+    if (s.bool) {
+      input.type = 'checkbox';
+      input.addEventListener('change', () => change(s, input.checked ? 1 : 0));
+    } else {
+      input.type = 'range';
+      input.min = s.min; input.max = s.max; input.step = s.step;
+      input.addEventListener('input', () => change(s, Number(input.value)));
+    }
+    row.append(label, input, val);
+    list.appendChild(row);
+    rows[s.key] = { row, input, val };
+  }
+}
+
+function showSetting(s) {
+  const r = rows[s.key];
+  const v = values[s.key];
+  if (s.key !== dragging) {
+    if (s.bool) r.input.checked = !!v;
+    else r.input.value = v;
+  }
+  r.val.textContent = fmt(s, s.key === dragging ? Number(r.input.value) : v);
+  r.row.classList.toggle('changed', v !== defaults[s.key]);
+}
+
+function change(s, v) {
+  dragging = s.key;
+  clearTimeout(dragTimer);
+  dragTimer = setTimeout(() => { dragging = null; }, 800);
+  rows[s.key].val.textContent = fmt(s, v);
+  send({ t: 'settings', action: 'set', key: s.key, value: v });
+}
+
+function settingsAction(action, text) {
+  send({ t: 'settings', action });
+  $('setMsg').textContent = text;
+}
+
+$('setBtn').addEventListener('click', () => { applyHeld(new Set()); $('settings').hidden = false; });
+$('setClose').addEventListener('click', () => { $('settings').hidden = true; });
+$('setReset').addEventListener('click', () => settingsAction('reset', 'Back to the default.'));
+$('setSave').addEventListener('click', () => {
+  if (confirm('Make the current settings the new default?')) settingsAction('saveDefault', 'Saved as the new default.');
+});
+$('setFactory').addEventListener('click', () => {
+  if (confirm('Go back to the original settings? (Your default is kept until you press Set default.)')) {
+    settingsAction('factory', 'Back to the original settings.');
+  }
+});
 
 // ---- Input ------------------------------------------------------------------
 // Recompute which buttons are held from *all* active touches on every touch
@@ -238,7 +363,9 @@ document.addEventListener('visibilitychange', () => { if (document.hidden) apply
 
 // Block iOS pinch-zoom and rubber-band scrolling on the controller.
 document.addEventListener('gesturestart', (e) => e.preventDefault());
-document.addEventListener('touchmove', (e) => { if (joined) e.preventDefault(); }, { passive: false });
+document.addEventListener('touchmove', (e) => {
+  if (joined && !e.target.closest('#settings')) e.preventDefault();
+}, { passive: false });
 
 </script>
 </body>

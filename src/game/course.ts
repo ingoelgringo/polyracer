@@ -1,20 +1,20 @@
 import { Delaunay } from "d3-delaunay";
+import { addOutline } from "./draw";
+import { settings } from "./settings";
 
 // Logical playfield size. The canvas is scaled to fit this on any screen.
 export const W = 1600;
 export const H = 900;
 
-const SPACING = 115; // average distance between the inner Voronoi sites
-const JITTER = 0.75; // how far sites stray from their grid position (share of SPACING)
+const JITTER = 0.75; // how far sites stray from their grid position (share of the grid spacing)
 const FRAME_INSET = 50; // frame sites sit on a ring this far in from the screen edge
 const FRAME_STEP = 120; // distance between frame sites along that ring
 // Inner sites bounce off a box this far inside the frame ring, so no inner cell
 // ever reaches the screen edge and the black frame stays closed.
 const FRAME_GAP = 55;
-const BOUNCE_MIN = 15; // px/s, how fast light grey sites bounce around (from level 2)
-const BOUNCE_MAX = 40;
-const DANGER_MIN = 25; // px/s, how fast red sites bounce around
-const DANGER_MAX = 55;
+// Light grey (from level 2) and red sites bounce around at between this share of
+// their speed setting and the full setting.
+const MOVE_MIN_SHARE = 0.4;
 const FAST_SHARE = 0.12; // share of inner cells that are light grey
 const SLOW_SHARE_START = 0.1; // share of inner cells that are dark grey on level 1…
 const SLOW_SHARE_STEP = 0.04; // …growing this much each level…
@@ -38,15 +38,15 @@ const CORNER_KEEPOUT = 140; // goals are never this close to a corner
 // danger: red, kills a ship that flies into it.
 export type Cell = "black" | "goal" | "start" | "fast" | "normal" | "slow" | "danger";
 
-export const CELL_SPEED: Record<Cell, number> = {
-  fast: 175,
-  normal: 115,
-  slow: 50,
-  goal: 115,
-  start: 115,
-  danger: 115,
-  black: 23,
-};
+// How fast ships fly over each kind of ground (see settings.ts).
+export function cellSpeed(cell: Cell) {
+  switch (cell) {
+    case "fast": return settings.speedFast;
+    case "slow": return settings.speedSlow;
+    case "black": return settings.speedBlack;
+    default: return settings.speedNormal;
+  }
+}
 
 const CELL_FILL: Record<Cell, string> = {
   black: "#000",
@@ -92,6 +92,7 @@ const frameRing = () => {
 export class Course {
   private cells: Cell[] = [];
   private paths: Path2D[] = [];
+  private polygons: number[][][] = [];
   private delaunay: Delaunay<Float64Array> | null = null;
   private vel: [number, number][] = [];
   private moving: number[] = []; // sites that bounce around this level
@@ -99,16 +100,20 @@ export class Course {
   private hint = 0;
   goal = -1; // site index of the green cell
   start = -1; // site index of the blue cell, -1 = start in the middle
+  builtCells = 0; // settings.cells when the sites were made
 
   // Fresh set of sites: the fixed frame plus a jittered grid of inner sites.
+  // The grid spacing is picked so there are about `settings.cells` inner sites.
   build() {
     const sites = frameRing();
     this.frameCount = sites.length;
-    for (let y = LO_Y + SPACING / 2; y < HI_Y; y += SPACING) {
-      for (let x = LO_X + SPACING / 2; x < HI_X; x += SPACING) {
+    const spacing = Math.sqrt(((HI_X - LO_X) * (HI_Y - LO_Y)) / settings.cells);
+    this.builtCells = settings.cells;
+    for (let y = LO_Y + spacing / 2; y < HI_Y; y += spacing) {
+      for (let x = LO_X + spacing / 2; x < HI_X; x += spacing) {
         sites.push([
-          Math.min(HI_X, Math.max(LO_X, x + (Math.random() - 0.5) * SPACING * JITTER)),
-          Math.min(HI_Y, Math.max(LO_Y, y + (Math.random() - 0.5) * SPACING * JITTER)),
+          Math.min(HI_X, Math.max(LO_X, x + (Math.random() - 0.5) * spacing * JITTER)),
+          Math.min(HI_Y, Math.max(LO_Y, y + (Math.random() - 0.5) * spacing * JITTER)),
         ]);
       }
     }
@@ -132,8 +137,8 @@ export class Course {
     this.cells = Array.from({ length: n }, (_, i) => (i < this.frameCount ? "black" : "normal"));
     this.vel = Array.from({ length: n }, () => [0, 0]);
     this.moving = [];
-    const move = (i: number, min: number, max: number) => {
-      this.vel[i] = heading(min, max);
+    const move = (i: number, max: number) => {
+      this.vel[i] = heading(max * MOVE_MIN_SHARE, max);
       this.moving.push(i);
     };
 
@@ -145,7 +150,7 @@ export class Course {
       .slice(0, dangers)
       .forEach((i) => {
         this.cells[i] = "danger";
-        move(i, DANGER_MIN, DANGER_MAX);
+        move(i, settings.moveDanger);
       });
 
     // Then black, spreading over the field level by level. The number of cells never
@@ -165,7 +170,7 @@ export class Course {
       if (k < slow) this.cells[i] = "slow";
       else if (k < slow + fast) {
         this.cells[i] = "fast";
-        if (level > 1) move(i, BOUNCE_MIN, BOUNCE_MAX);
+        if (level > 1) move(i, settings.moveFast);
       }
     });
 
@@ -200,9 +205,10 @@ export class Course {
 
   private rebuildPaths() {
     const voronoi = this.delaunay!.voronoi([0, 0, W, H]);
-    this.paths = Array.from({ length: this.siteCount() }, (_, i) => {
+    this.polygons = Array.from({ length: this.siteCount() }, (_, i) => voronoi.cellPolygon(i) ?? []);
+    this.paths = this.polygons.map((poly) => {
       const p = new Path2D();
-      (voronoi.cellPolygon(i) ?? []).forEach(([x, y], j) => (j ? p.lineTo(x, y) : p.moveTo(x, y)));
+      poly.forEach(([x, y], j) => (j ? p.lineTo(x, y) : p.moveTo(x, y)));
       p.closePath();
       return p;
     });
@@ -230,24 +236,40 @@ export class Course {
   }
 
   draw(ctx: CanvasRenderingContext2D, time: number) {
-    const pulse = 0.5 + 0.5 * Math.sin(time * 5);
     this.paths.forEach((path, i) => {
-      const cell = this.cells[i];
-      ctx.fillStyle = CELL_FILL[cell];
+      ctx.fillStyle = CELL_FILL[this.cells[i]];
       ctx.fill(path);
-      if (cell === "goal") {
-        ctx.save();
-        ctx.shadowColor = "#2ed573";
-        ctx.shadowBlur = 10 + 20 * pulse;
-        ctx.strokeStyle = `rgba(200, 255, 220, ${0.5 + 0.5 * pulse})`;
-        ctx.lineWidth = 3;
-        ctx.stroke(path);
-        ctx.restore();
-      } else {
-        ctx.strokeStyle = cell === "black" ? "rgba(70, 70, 75, 0.8)" : "rgba(20, 20, 24, 0.55)";
-        ctx.lineWidth = 1.5;
-        ctx.stroke(path);
-      }
     });
+    // Each outline style is one path filled once, so shared edges don't double up.
+    const outlines = (match: (cell: Cell) => boolean, width: number) => {
+      ctx.beginPath();
+      this.polygons.forEach((poly, i) => match(this.cells[i]) && addOutline(ctx, poly, width));
+    };
+    outlines((c) => c !== "black" && c !== "goal", 1.5);
+    ctx.fillStyle = "rgba(20, 20, 24, 0.55)";
+    ctx.fill();
+    outlines((c) => c === "black", 1.5);
+    ctx.fillStyle = "rgba(70, 70, 75, 0.8)";
+    ctx.fill();
+
+    const pulse = 0.5 + 0.5 * Math.sin(time * 5);
+    ctx.save();
+    ctx.shadowColor = "#2ed573";
+    ctx.shadowBlur = 10 + 20 * pulse;
+    outlines((c) => c === "goal", 3);
+    ctx.fillStyle = `rgba(200, 255, 220, ${0.5 + 0.5 * pulse})`;
+    ctx.fill();
+    ctx.restore();
+
+    // The sites the cells are computed from.
+    if (!settings.showSites) return;
+    ctx.beginPath();
+    for (let i = 0; i < this.siteCount(); i++) {
+      const { x, y } = this.site(i);
+      ctx.moveTo(x + 2.5, y);
+      ctx.arc(x, y, 2.5, 0, Math.PI * 2);
+    }
+    ctx.fillStyle = "rgba(255, 255, 255, 0.6)";
+    ctx.fill();
   }
 }

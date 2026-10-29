@@ -4,8 +4,10 @@
 // relays WebSocket messages between phones and the TV. The TV runs the game
 // simulation; the server is only a switchboard.
 
+const fs = require('fs');
 const http = require('http');
 const os = require('os');
+const path = require('path');
 const next = require('next');
 const { WebSocketServer } = require('ws');
 const QRCode = require('qrcode');
@@ -13,6 +15,7 @@ const QRCode = require('qrcode');
 const PORT = Number(process.env.PORT) || 3000;
 const MAX_PLAYERS = 8;
 const dev = process.env.NODE_ENV !== 'production';
+const SETTINGS_FILE = path.join(__dirname, 'settings.json');
 
 // First non-internal IPv4 address, so phones on the same Wi-Fi can reach us.
 function lanAddress() {
@@ -40,6 +43,25 @@ async function handleInfo(res) {
 const app = next({ dev });
 const handle = app.getRequestHandler();
 
+// ---- Settings ----------------------------------------------------------------
+// The TV owns the settings (src/game/settings.ts) and checks them. The server just
+// keeps the last ones it was sent, on disk, and hands them to every new TV screen.
+
+let savedSettings = null; // { values, defaults }
+try { savedSettings = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8')); } catch {}
+
+let saveTimer = null;
+function saveSettings(values, defaults) {
+  savedSettings = { values, defaults };
+  // A slider sends lots of changes; write once it settles.
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    fs.writeFile(SETTINGS_FILE, JSON.stringify(savedSettings, null, 2), (e) => {
+      if (e) console.error('Could not save settings:', e.message);
+    });
+  }, 500);
+}
+
 // ---- WebSocket relay -------------------------------------------------------
 
 const wss = new WebSocketServer({ noServer: true });
@@ -54,6 +76,7 @@ function send(ws, msg) {
 function attachHost(ws) {
   if (host) host.close(4000, 'replaced by a new screen');
   host = ws;
+  if (savedSettings) send(host, { t: 'savedSettings', ...savedSettings });
   // Tell the new screen about everyone already holding a controller.
   for (const [id, p] of players) send(host, { t: 'join', id, name: p.name });
   for (const p of players.values()) send(p.ws, { t: 'host', online: true });
@@ -64,6 +87,7 @@ function attachHost(ws) {
     // Host -> one player, or host -> everyone.
     if (msg.t === 'to') send(players.get(msg.id)?.ws, msg.msg);
     else if (msg.t === 'all') for (const p of players.values()) send(p.ws, msg.msg);
+    else if (msg.t === 'saveSettings') saveSettings(msg.values, msg.defaults);
   });
 
   ws.on('close', () => {
