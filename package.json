@@ -7,7 +7,8 @@
     "build": "node scripts/build-tv.mjs && next build",
     "start": "NODE_ENV=production node server.js",
     "lint": "next lint",
-    "build:tv": "node scripts/build-tv.mjs"
+    "build:tv": "node scripts/build-tv.mjs",
+    "build:icons": "node scripts/build-icons.mjs"
   },
   "dependencies": {
     "d3-delaunay": "^6.0.4",

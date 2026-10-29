@@ -17,6 +17,7 @@ const LEGACY_REDIRECT = `try { new Function("async function f() {} var o = { ...
 export const metadata: Metadata = {
   title: "Polyracer",
   description: "Couch party game: race from the middle to a green cell before time runs out, last player left wins.",
+  icons: { apple: "/apple-touch-icon.png" },
 };
 
 export default function RootLayout({
