@@ -29,8 +29,7 @@ export const SETTINGS: SettingDef[] = [
   { key: "trailLife", group: "Ships", label: "Trail (0 = off)", min: 0, max: 10, step: 0.5, def: 4, unit: "s" },
 
   { key: "fireCooldown", group: "Bullets", label: "Time between shots", min: 0, max: 10, step: 0.1, def: 2, unit: "s" },
-  { key: "bulletSpeed", group: "Bullets", label: "Speed", min: 50, max: 1000, step: 10, def: 340, unit: "px/s" },
-  { key: "bulletLife", group: "Bullets", label: "Range", min: 0.2, max: 10, step: 0.1, def: 2.6, unit: "s" },
+  { key: "bulletSpeed", group: "Bullets", label: "Speed", min: 50, max: 1000, step: 10, def: 280, unit: "px/s" },
 
   { key: "shrapnelCount", group: "Shrapnel", label: "Pieces", min: 0, max: 32, step: 1, def: 8 },
   { key: "shrapnelSpeed", group: "Shrapnel", label: "Speed", min: 50, max: 1000, step: 10, def: 340, unit: "px/s" },
@@ -42,6 +41,9 @@ export const SETTINGS: SettingDef[] = [
   { key: "showSites", group: "Map", label: "Show polygon dots", min: 0, max: 1, step: 1, def: 1, bool: true },
 
   { key: "timeScale", group: "Game", label: "Time limit", min: 0.3, max: 3, step: 0.05, def: 1, unit: "×" },
+
+  { key: "music", group: "Sound", label: "Music", min: 0, max: 1, step: 1, def: 1, bool: true },
+  { key: "musicVolume", group: "Sound", label: "Music volume", min: 0, max: 100, step: 5, def: 60, unit: "%" },
 ];
 
 export type Values = Record<string, number>;

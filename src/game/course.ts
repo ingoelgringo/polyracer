@@ -12,10 +12,11 @@ const FRAME_STEP = 120; // distance between frame sites along that ring
 // Inner sites bounce off a box this far inside the frame ring, so no inner cell
 // ever reaches the screen edge and the black frame stays closed.
 const FRAME_GAP = 55;
-// Light grey (from level 2) and red sites bounce around at between this share of
+// Moving light grey (from level 2) and red sites bounce around at between this share of
 // their speed setting and the full setting.
 const MOVE_MIN_SHARE = 0.4;
 const FAST_SHARE = 0.12; // share of inner cells that are light grey
+const FAST_MOVING_SHARE = 0.5; // share of the light grey cells that move; the rest stay put
 const SLOW_SHARE_START = 0.1; // share of inner cells that are dark grey on level 1…
 const SLOW_SHARE_STEP = 0.04; // …growing this much each level…
 const SLOW_SHARE_MAX = 0.45; // …up to this
@@ -128,7 +129,7 @@ export class Course {
   // Lays out a level on the current sites. `start` is the blue cell (or -1 for the
   // middle); a new green cell is picked far from it. Mostly grey with random dark and
   // light grey cells; the dark grey spreads each level. Level 1 stands still; after
-  // that the light grey cells bounce around, and from DANGER_LEVEL red ones join them.
+  // that half the light grey cells bounce around, and from DANGER_LEVEL red ones join them.
   setup(level: number, start: number) {
     const n = this.siteCount();
     const pos = (i: number) => this.site(i);
@@ -166,11 +167,12 @@ export class Course {
     const rest = inner.filter((i) => this.cells[i] === "normal");
     const slow = Math.round(rest.length * Math.min(SLOW_SHARE_MAX, SLOW_SHARE_START + SLOW_SHARE_STEP * (level - 1)));
     const fast = Math.round(rest.length * FAST_SHARE);
+    const fastMoving = Math.round(fast * FAST_MOVING_SHARE);
     rest.forEach((i, k) => {
       if (k < slow) this.cells[i] = "slow";
       else if (k < slow + fast) {
         this.cells[i] = "fast";
-        if (level > 1) move(i, settings.moveFast);
+        if (level > 1 && k < slow + fastMoving) move(i, settings.moveFast);
       }
     });
 

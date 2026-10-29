@@ -1,5 +1,6 @@
 import { cellSpeed, Course, H, W } from "./course";
 import { addDot, addLine, addOutline } from "./draw";
+import { Music } from "./music";
 import { clean, FACTORY, isAdmin, settings, SETTINGS, Values } from "./settings";
 
 // ---- Tuning -------------------------------------------------------------------
@@ -39,6 +40,7 @@ interface Ship {
   finished: boolean; // reached the green cell this level, parked there
   parkX: number; parkY: number; // where it parks inside the goal
   stopped: boolean; // both buttons held
+  pivot: boolean; // came out of a stop with one button still held: turn on the spot until it's let go
   fireCd: number;
   respawnT: number;
 }
@@ -106,6 +108,7 @@ export class Game {
   private offX = 0;
   private offY = 0;
   private defaults: Values = { ...FACTORY }; // what the Default button goes back to
+  private music = new Music();
 
   constructor(private canvas: HTMLCanvasElement, private onUi: (ui: UiState) => void) {
     this.ctx = canvas.getContext("2d")!;
@@ -120,6 +123,7 @@ export class Game {
     this.resize();
     this.connect();
     this.loadJoinInfo();
+    this.music.start();
     this.emitUi();
     this.raf = requestAnimationFrame(this.frame);
   }
@@ -130,6 +134,7 @@ export class Game {
     removeEventListener("resize", this.resize);
     removeEventListener("keydown", this.keyDown);
     removeEventListener("keyup", this.keyUp);
+    this.music.stop();
     this.ws?.close();
   }
 
@@ -227,6 +232,7 @@ export class Game {
 
   private changeSettings(values: Values, save = true) {
     Object.assign(settings, values);
+    this.music.apply();
     // A new number of polygons needs a new map, which only happens in the lobby.
     if (this.phase === "lobby" && this.course.builtCells !== settings.cells) {
       this.course.build();
@@ -318,7 +324,7 @@ export class Game {
     const r = n <= 1 ? 0 : SPAWN_RING;
     return {
       x: W / 2 + Math.cos(a) * r, y: H / 2 + Math.sin(a) * r, a,
-      alive: true, finished: false, stopped: false, fireCd: 0, respawnT: 0, parkX: 0, parkY: 0,
+      alive: true, finished: false, stopped: false, pivot: false, fireCd: 0, respawnT: 0, parkX: 0, parkY: 0,
     };
   }
 
@@ -508,14 +514,16 @@ export class Game {
       const nose = 15 * settings.shipSize;
       this.bullets.push({
         x: s.x + Math.cos(s.a) * nose, y: s.y + Math.sin(s.a) * nose, a: s.a,
-        owner: p, credit: p, life: settings.bulletLife, shrapnel: false,
+        owner: p, credit: p, life: Infinity, shrapnel: false,
       });
     }
     s.stopped = both;
-    if (both) return;
+    if (both) { s.pivot = true; return; }
 
     if (p.input.l) s.a -= settings.shipTurn * dt;
     if (p.input.r) s.a += settings.shipTurn * dt;
+    if (!p.input.l && !p.input.r) s.pivot = false;
+    if (s.pivot) return;
     const speed = cellSpeed(this.course.cellAt(s.x, s.y));
     const dx = Math.cos(s.a) * speed * dt, dy = Math.sin(s.a) * speed * dt;
 
@@ -563,9 +571,10 @@ export class Game {
       b.life -= dt;
       b.x += Math.cos(b.a) * speed * dt;
       b.y += Math.sin(b.a) * speed * dt;
-      if (this.course.isOutside(b.x, b.y)) {
+      // Gone once it has slid fully off the screen.
+      const r = b.shrapnel ? 2 : 3;
+      if (b.x < -r || b.x > W + r || b.y < -r || b.y > H + r) {
         b.life = 0;
-        this.burst(b.x, b.y, b.owner.color, 8);
         continue;
       }
       for (const p of this.players.values()) {
@@ -694,8 +703,8 @@ export class Game {
       if (b.cut) continue;
       ctx.globalAlpha = Math.max(0, 0.8 * (1 - (this.time - a.t) / settings.trailLife));
       ctx.beginPath();
-      addLine(ctx, a.x, a.y, b.x, b.y, 3);
-      addDot(ctx, b.x, b.y, 1.5);
+      addLine(ctx, a.x, a.y, b.x, b.y, 2);
+      addDot(ctx, b.x, b.y, 1);
       ctx.fill();
     }
     ctx.globalAlpha = 1;
@@ -704,7 +713,7 @@ export class Game {
   private drawBullet(b: Bullet) {
     const ctx = this.ctx;
     ctx.beginPath();
-    ctx.arc(b.x, b.y, b.shrapnel ? 3 : 4, 0, Math.PI * 2);
+    ctx.arc(b.x, b.y, b.shrapnel ? 2 : 3, 0, Math.PI * 2);
     ctx.fillStyle = b.owner.color;
     ctx.fill();
   }
