@@ -4,16 +4,18 @@ A couch party game. The TV shows a field of Voronoi polygons and the phones are 
 
 - **Light grey** cells are fast, **grey** is normal speed and **dark grey** is very slow. Most cells are grey. The dark and light grey ones are scattered at random.
 - From level 4, **red** cells bounce around too. Fly into one and you die, just like being shot.
-- A ship that dies throws shrapnel in 8 directions. Shrapnel kills like a bullet, so one death can set off a chain.
+- A ship that dies throws 8 pieces of shrapnel, each in its own direction. Shrapnel kills like a bullet, so one death can set off a chain.
+- The **blue** start cell and the **green** goal are safe: you can't shoot from inside them, and bullets and shrapnel fly straight through ships in there.
 - Each ship leaves a trail of where it has flown. The trail fades after a few seconds.
 - **Black** cells make up the frame. You can fly into them, but only at a crawl. Bullets fly straight through. One of them is the **green** goal. The screen edge is the only real wall.
 - From level 2, black cells spread onto the field too, a few more each level. The number of cells never changes, only how many of them are black.
 - The level ends when every ship still alive is in the green cell, or when the clock runs out. Anyone who hasn't made it by then is out. Until then you can fly out of the green cell again, into the black frame too.
 - Once the level is over, the ships in the green cell can steer around inside it and bounce off all its walls.
 - The next level starts in that cell. It turns **blue** and a new green cell appears somewhere else. You keep bouncing around in it through the countdown, and when the race starts its walls open again.
-- The screen edge is the only wall that always bounces you.
+- The screen edge is the only wall that always bounces you, during the race too.
 - Ships always move forward. They turn instantly, with no drift.
 - Get to a green cell in time without being shot and you're through to the next level. Anyone else is out.
+- If the level ends because someone was hit, the banner waits 2 seconds so the blast stays in view.
 - If nobody makes it, the same players replay from the same blue cell with a new goal. When only one player is left, that player wins.
 - The clock gets tighter, the dark grey and black ground spreads and more red cells appear with each level.
 

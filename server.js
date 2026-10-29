@@ -40,6 +40,14 @@ async function handleInfo(res) {
   res.end(JSON.stringify({ joinUrl: url, qr }));
 }
 
+// Next only hot-reloads its own page. public/tv.js is built separately, so keep it
+// rebuilding as the game code changes, or the old-TV page runs stale code.
+if (dev) {
+  const { spawn } = require('child_process');
+  const tv = spawn(process.execPath, [path.join(__dirname, 'scripts/build-tv.mjs'), '--watch'], { stdio: 'inherit' });
+  process.on('exit', () => tv.kill());
+}
+
 const app = next({ dev });
 const handle = app.getRequestHandler();
 

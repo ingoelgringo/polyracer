@@ -8,6 +8,7 @@ import { clean, FACTORY, isAdmin, settings, SETTINGS, Values } from "./settings"
 
 const COUNTDOWN = 3;
 const LEVEL_OVER_TIME = 3.5;
+const HIT_PAUSE = 2; // a level ended by a hit waits this long before the banner, so the blast stays in view
 const RESULTS_TIME = 8;
 const LOBBY_RESPAWN = 1.5;
 
@@ -56,7 +57,6 @@ interface Player {
 interface TrailPoint { x: number; y: number; t: number; cut: boolean } // cut: don't connect to the previous point
 // owner: whose colour it is and who it can't hit. credit: who gets the kill.
 interface Bullet { x: number; y: number; a: number; owner: Player; credit: Player | null; life: number; shrapnel: boolean }
-interface Particle { x: number; y: number; vx: number; vy: number; life: number; max: number; color: string }
 
 export interface UiState {
   phase: Phase;
@@ -83,11 +83,11 @@ export class Game {
   private course = new Course();
   private players = new Map<string, Player>();
   private bullets: Bullet[] = [];
-  private particles: Particle[] = [];
   private phase: Phase = "lobby";
   private phaseT = 0;
   private time = 0;
   private level = 0;
+  private lastHit = -1; // this.time of the latest kill
   private timeLeft = 0;
   private outcome = ""; // headline shown between levels
   private retry = false; // nobody made it: replay with the same players
@@ -415,16 +415,18 @@ export class Game {
     const lastStanding = contenders.length >= 2 && standing.length === 1;
     const through = lastStanding ? standing : contenders.filter((p) => p.ship!.finished);
     for (const p of through) p.levels++;
+    // Ended by a hit: let the blast play out before the banner covers it.
+    const overTime = LEVEL_OVER_TIME + (this.lastHit === this.time ? HIT_PAUSE : 0);
 
     if (contenders.length <= 1) {
       // Solo: keep going until the clock wins.
       if (through.length) {
         this.outcome = `Level ${this.level} cleared!`;
-        this.setPhase("levelover", LEVEL_OVER_TIME);
+        this.setPhase("levelover", overTime);
       } else {
         this.soloLevels = this.level - 1;
         this.outcome = "Out of time!";
-        this.setPhase("levelover", LEVEL_OVER_TIME);
+        this.setPhase("levelover", overTime);
       }
       return;
     }
@@ -442,7 +444,7 @@ export class Game {
         this.outcome = `${through.length} players go through`;
       }
     }
-    this.setPhase("levelover", LEVEL_OVER_TIME);
+    this.setPhase("levelover", overTime);
   }
 
   // ---- Simulation -----------------------------------------------------------------
@@ -483,7 +485,6 @@ export class Game {
       }
     }
     this.stepBullets(dt);
-    this.stepParticles(dt);
     this.stepTrails();
 
     if (this.phase === "race") {
@@ -530,7 +531,7 @@ export class Game {
     s.fireCd -= dt;
     const both = p.input.l && p.input.r;
     // Both buttons: stop dead and fire once straight ahead.
-    if (both && !s.stopped && s.fireCd <= 0) {
+    if (both && !s.stopped && s.fireCd <= 0 && !this.isSafe(s)) {
       s.fireCd = settings.fireCooldown;
       s.recover = 1;
       const nose = 15 * settings.shipSize;
@@ -548,12 +549,10 @@ export class Game {
     if (!p.input.l && !p.input.r) s.pivot = false;
     if (s.pivot) return;
     const speed = cellSpeed(this.course.cellAt(s.x, s.y)) * (1 - s.recover);
-    const dx = Math.cos(s.a) * speed * dt, dy = Math.sin(s.a) * speed * dt;
-    // Black cells are just very slow; the screen edge is the wall. Slide along it.
-    if (!this.hitsWall(s.x + dx, s.y + dy, s)) { s.x += dx; s.y += dy; }
-    else if (!this.hitsWall(s.x + dx, s.y, s)) s.x += dx;
-    else if (!this.hitsWall(s.x, s.y + dy, s)) s.y += dy;
-    this.addTrail(p, s);
+    const x = s.x + Math.cos(s.a) * speed * dt, y = s.y + Math.sin(s.a) * speed * dt;
+    // Black cells are just very slow; the screen edge is the wall, and it bounces you.
+    if (this.hitsWall(x, y, s)) this.bounce(s, this.edgeNormal(x, y, s));
+    else { s.x = x; s.y = y; this.addTrail(p, s); }
 
     // Home only counts while you're in the green cell: fly out again and you're racing.
     const home = this.phase === "race" && this.course.cellAt(s.x, s.y) === "goal";
@@ -573,31 +572,43 @@ export class Game {
     const x = s.x + Math.cos(s.a) * dist, y = s.y + Math.sin(s.a) * dist;
     const n = this.penWall(x, y, s, site);
     if (!n) { s.x = x; s.y = y; this.addTrail(p, s); return; }
-    // Mirror the heading in the wall, if we're heading into it.
+    this.bounce(s, n);
+  }
+
+  // Mirror the heading in a wall with outward normal n, if we're heading into it.
+  private bounce(s: Ship, n: { x: number; y: number }) {
     const vx = Math.cos(s.a), vy = Math.sin(s.a), d = vx * n.x + vy * n.y;
     if (d > 0) s.a = Math.atan2(vy - 2 * d * n.y, vx - 2 * d * n.x);
+  }
+
+  // Outward normal of whichever screen edge the move to (x, y) pushes the hull further into.
+  private edgeNormal(x: number, y: number, s: Ship) {
+    const out = (cx: number, cy: number) => {
+      const k = settings.shipSize, c = Math.cos(s.a) * k, sn = Math.sin(s.a) * k;
+      const d = [0, 0, 0, 0]; // left, right, top, bottom
+      for (const [dx, dy] of HULL) {
+        const px = cx + dx * c - dy * sn, py = cy + dx * sn + dy * c;
+        d[0] = Math.max(d[0], -px); d[1] = Math.max(d[1], px - W);
+        d[2] = Math.max(d[2], -py); d[3] = Math.max(d[3], py - H);
+      }
+      return d;
+    };
+    const now = out(s.x, s.y), next = out(x, y);
+    const e = [0, 1, 2, 3].reduce((m, i) => (next[i] - now[i] > next[m] - now[m] ? i : m), 0);
+    return [{ x: -1, y: 0 }, { x: 1, y: 0 }, { x: 0, y: -1 }, { x: 0, y: 1 }][e];
+  }
+
+  // The blue start cell and the green goal: nobody can shoot from in there or be hit in there.
+  private isSafe(s: Ship) {
+    const cell = this.course.cellAt(s.x, s.y);
+    return cell === "start" || cell === "goal";
   }
 
   // Outward normal of the wall the ship would hit moving to (x, y), or null if it may go
   // there. Like reaching home, leaving the cell counts by the ship's middle; the screen
   // edge stops the whole hull.
   private penWall(x: number, y: number, s: Ship, site: number) {
-    if (this.hitsWall(x, y, s)) {
-      // Bounce off whichever screen edge the move pushes further into.
-      const out = (cx: number, cy: number) => {
-        const k = settings.shipSize, c = Math.cos(s.a) * k, sn = Math.sin(s.a) * k;
-        const d = [0, 0, 0, 0]; // left, right, top, bottom
-        for (const [dx, dy] of HULL) {
-          const px = cx + dx * c - dy * sn, py = cy + dx * sn + dy * c;
-          d[0] = Math.max(d[0], -px); d[1] = Math.max(d[1], px - W);
-          d[2] = Math.max(d[2], -py); d[3] = Math.max(d[3], py - H);
-        }
-        return d;
-      };
-      const now = out(s.x, s.y), next = out(x, y);
-      const e = [0, 1, 2, 3].reduce((m, i) => (next[i] - now[i] > next[m] - now[m] ? i : m), 0);
-      return [{ x: -1, y: 0 }, { x: 1, y: 0 }, { x: 0, y: -1 }, { x: 0, y: 1 }][e];
-    }
+    if (this.hitsWall(x, y, s)) return this.edgeNormal(x, y, s);
     const j = this.course.siteAt(x, y);
     if (j !== site) {
       // Voronoi edges are halfway between two sites, square to the line joining them.
@@ -638,7 +649,7 @@ export class Game {
       }
       for (const p of this.players.values()) {
         const s = p.ship;
-        if (p === b.owner || !s?.alive || s.finished) continue;
+        if (p === b.owner || !s?.alive || this.isSafe(s)) continue;
         if (Math.hypot(s.x - b.x, s.y - b.y) < SHIP_RADIUS * settings.shipSize + 3) {
           b.life = 0;
           if (this.phase === "lobby" || this.phase === "race") this.kill(p, b.credit);
@@ -655,8 +666,8 @@ export class Game {
     const s = p.ship!;
     s.alive = false;
     s.respawnT = LOBBY_RESPAWN;
+    this.lastHit = this.time;
     if (this.phase === "race" && by && by !== p) by.kills++;
-    this.burst(s.x, s.y, p.color, 40);
     const n = settings.shrapnelCount;
     for (let k = 0; k < n; k++) {
       this.bullets.push({ x: s.x, y: s.y, a: (k * Math.PI * 2) / n, owner: p, credit: by, life: settings.shrapnelLife, shrapnel: true });
@@ -664,25 +675,6 @@ export class Game {
     this.sendTo(p.id, { t: "buzz" });
     this.broadcastStatus();
     this.emitUi();
-  }
-
-  private burst(x: number, y: number, color: string, n: number) {
-    for (let i = 0; i < n; i++) {
-      const a = Math.random() * Math.PI * 2, v = 60 + Math.random() * 260;
-      const max = 0.4 + Math.random() * 0.6;
-      this.particles.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: max, max, color });
-    }
-  }
-
-  private stepParticles(dt: number) {
-    for (const q of this.particles) {
-      q.life -= dt;
-      q.x += q.vx * dt;
-      q.y += q.vy * dt;
-      q.vx *= 1 - dt * 2;
-      q.vy *= 1 - dt * 2;
-    }
-    this.particles = this.particles.filter((q) => q.life > 0);
   }
 
   private addTrail(p: Player, s: Ship) {
@@ -725,12 +717,6 @@ export class Game {
     for (const p of this.players.values()) this.drawTrail(p);
     for (const b of this.bullets) this.drawBullet(b);
     for (const p of this.players.values()) if (p.ship?.alive) this.drawShip(p, p.ship);
-    for (const q of this.particles) {
-      ctx.globalAlpha = q.life / q.max;
-      ctx.fillStyle = q.color;
-      ctx.fillRect(q.x - 2, q.y - 2, 4, 4);
-    }
-    ctx.globalAlpha = 1;
     ctx.restore();
 
     this.drawHud();
@@ -814,7 +800,7 @@ export class Game {
       ctx.lineWidth = 6;
       ctx.strokeText(String(Math.ceil(this.phaseT)), W / 2, H / 2 + 55);
       ctx.fillText(String(Math.ceil(this.phaseT)), W / 2, H / 2 + 55);
-    } else if (this.phase === "levelover") {
+    } else if (this.phase === "levelover" && this.phaseT <= LEVEL_OVER_TIME) {
       ctx.fillStyle = "rgba(0,0,0,0.7)";
       ctx.fillRect(0, H / 2 - 90, W, 150);
       ctx.font = "900 72px system-ui, sans-serif";
