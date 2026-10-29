@@ -17,7 +17,7 @@ A couch party game. The TV shows a field of Voronoi polygons and the phones are 
 - Get to a green cell in time without being shot and you're through to the next level. Anyone else is out.
 - If the level ends because someone was hit, the banner waits 2 seconds so the blast stays in view.
 - If nobody makes it, the same players replay from the same blue cell with a new goal. When only one player is left, that player wins.
-- The clock gets tighter, the dark grey and black ground spreads and more red cells appear with each level.
+- The clock is worked out from the fastest way through the cells to the goal at the current ground speeds, going round the red cells. It gets tighter each level, while the dark grey and black ground spreads and more red cells appear.
 
 Controls are two buttons:
 
@@ -64,4 +64,4 @@ The server saves the settings in `settings.json`, so both TV pages share them an
 - `public/controller.html` (served at `/play`) is the phone pad. It sends `{l, r}` (left/right held) when they change.
 - A phone keeps its player id in `localStorage`. After a Wi-Fi blip it rejoins as the same ship.
 
-Tuning constants live at the top of `game.ts` (time limit, turn rate, bullets) and `course.ts` (cell spacing, how much of each terrain there is per level, when red cells arrive, bounce speeds, and the speed of each terrain in `CELL_SPEED`).
+Tuning constants live at the top of `game.ts` (phase timings, how the time limit tightens each level, ship hitbox, start spacing, trails) and `course.ts` (cell spacing, how much of each terrain there is per level, when red cells arrive and bounce speeds). The speed of each terrain is a setting in `settings.ts`, read through `cellSpeed` in `course.ts`.

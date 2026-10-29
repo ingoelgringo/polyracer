@@ -245,6 +245,34 @@ export class Course {
     return this.hint;
   }
 
+  // Seconds of the fastest way from (x, y) into the goal at the current ground speeds,
+  // hopping from site to neighbouring site around the red cells. Half of each hop is
+  // flown at one cell's speed and half at the other's, and the trip ends at the goal's
+  // edge. Null if the red cells close every way.
+  travelTime(x: number, y: number): number | null {
+    if (!this.delaunay || this.goal < 0) return null;
+    const n = this.siteCount();
+    const pace = (i: number) => 1 / Math.max(1, cellSpeed(this.cells[i]));
+    const time = new Array<number>(n).fill(Infinity);
+    const done = new Array<boolean>(n).fill(false);
+    const from = this.siteAt(x, y), f = this.site(from);
+    time[from] = Math.hypot(f.x - x, f.y - y) * pace(from);
+    for (;;) {
+      let i = -1;
+      for (let k = 0; k < n; k++) if (!done[k] && time[k] < Infinity && (i < 0 || time[k] < time[i])) i = k;
+      if (i < 0) return null;
+      if (i === this.goal) return time[i];
+      done[i] = true;
+      const a = this.site(i);
+      for (const j of this.delaunay.neighbors(i)) {
+        if (done[j] || this.cells[j] === "danger") continue;
+        const b = this.site(j), half = Math.hypot(b.x - a.x, b.y - a.y) / 2;
+        const t = time[i] + half * pace(i) + (j === this.goal ? 0 : half * pace(j));
+        if (t < time[j]) time[j] = t;
+      }
+    }
+  }
+
   // The screen edge is the only thing ships can't pass.
   isOutside(x: number, y: number) {
     return x < 0 || x > W || y < 0 || y > H;

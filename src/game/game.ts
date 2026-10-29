@@ -12,7 +12,7 @@ const HIT_PAUSE = 2; // a level ended by a hit waits this long before the banner
 const RESULTS_TIME = 8;
 const LOBBY_RESPAWN = 1.5;
 
-// Time limit = trip to the nearest goal at normal speed × this factor (+ a little).
+// Time limit = fastest way through the cells to the goal (Course.travelTime) × this factor (+ a little).
 const TIME_FACTOR_START = 3.2;
 const TIME_FACTOR_STEP = 0.2; // shaved off each level
 const TIME_FACTOR_MIN = 1.6;
@@ -381,8 +381,9 @@ export class Game {
     const from = start >= 0 ? this.course.site(start) : { x: W / 2, y: H / 2 };
     const goal = this.course.site(this.course.goal);
     const factor = Math.max(TIME_FACTOR_MIN, TIME_FACTOR_START - TIME_FACTOR_STEP * (this.level - 1)) * settings.timeScale;
-    const speed = Math.max(1, settings.speedNormal);
-    this.timeLeft = Math.ceil((Math.hypot(goal.x - from.x, goal.y - from.y) / speed) * factor + 2);
+    // If the red cells shut every way, fall back to the straight line at normal speed.
+    const trip = this.course.travelTime(from.x, from.y) ?? Math.hypot(goal.x - from.x, goal.y - from.y) / Math.max(1, settings.speedNormal);
+    this.timeLeft = Math.ceil(trip * factor + 2);
 
     const list = [...this.players.values()];
     const was = new Map(list.map((p) => [p, p.ship]));
