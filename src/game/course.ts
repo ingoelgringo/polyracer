@@ -104,12 +104,13 @@ export class Course {
   builtCells = 0; // settings.cells when the sites were made
 
   // Fresh set of sites: the fixed frame plus a jittered grid of inner sites.
-  // The grid spacing is picked so there are about `settings.cells` inner sites.
-  build() {
+  // The grid spacing is picked so there are about `cells` inner sites. The frame
+  // ring always comes out the same, so frame cells keep their indices.
+  build(cells = settings.cells) {
     const sites = frameRing();
     this.frameCount = sites.length;
-    const spacing = Math.sqrt(((HI_X - LO_X) * (HI_Y - LO_Y)) / settings.cells);
-    this.builtCells = settings.cells;
+    const spacing = Math.sqrt(((HI_X - LO_X) * (HI_Y - LO_Y)) / cells);
+    this.builtCells = cells;
     for (let y = LO_Y + spacing / 2; y < HI_Y; y += spacing) {
       for (let x = LO_X + spacing / 2; x < HI_X; x += spacing) {
         sites.push([

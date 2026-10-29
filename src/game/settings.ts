@@ -40,6 +40,7 @@ export const SETTINGS: SettingDef[] = [
   { key: "moveFast", group: "Map", label: "Light grey movement", min: 0, max: 200, step: 1, def: 40, unit: "px/s" },
   { key: "moveDanger", group: "Map", label: "Red movement", min: 0, max: 200, step: 1, def: 55, unit: "px/s" },
   { key: "showSites", group: "Map", label: "Show polygon dots", min: 0, max: 1, step: 1, def: 1, bool: true },
+  { key: "shuffleSites", group: "Map", label: "New dot positions each level", min: 0, max: 1, step: 1, def: 0, bool: true },
 
   { key: "timeScale", group: "Game", label: "Time limit", min: 0.3, max: 3, step: 0.05, def: 1, unit: "×" },
 

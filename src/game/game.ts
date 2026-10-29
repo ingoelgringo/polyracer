@@ -366,6 +366,8 @@ export class Game {
     // up in the same blue cell again.
     if (advance) this.level++;
     const start = advance ? (this.level === 1 ? -1 : this.course.goal) : this.course.start;
+    // New inner dots, same number of polygons. The frame stays, so `start` is still the same cell.
+    if (settings.shuffleSites) this.course.build(this.course.builtCells);
     this.course.setup(this.level, start);
     this.bullets = [];
     this.outcome = "";
@@ -382,8 +384,10 @@ export class Game {
     const racing = list.filter((p) => !p.out);
     racing.forEach((p, i) => {
       const old = was.get(p);
-      if (advance && this.level > 1 && old?.alive) p.ship = Object.assign(this.spawnShip(0, 1), { x: old.x, y: old.y, a: old.a });
-      else p.ship = start >= 0 ? this.spawnInStart(i) : this.spawnShip(i, racing.length);
+      // Carry on from where you stood, unless the new dots moved the blue cell's wall past you.
+      if (advance && this.level > 1 && old?.alive && this.course.siteAt(old.x, old.y) === start) {
+        p.ship = Object.assign(this.spawnShip(0, 1), { x: old.x, y: old.y, a: old.a });
+      } else p.ship = start >= 0 ? this.spawnInStart(i) : this.spawnShip(i, racing.length);
     });
     this.setPhase("countdown", COUNTDOWN);
   }
