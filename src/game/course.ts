@@ -250,7 +250,7 @@ export class Course {
     return x < 0 || x > W || y < 0 || y > H;
   }
 
-  draw(ctx: CanvasRenderingContext2D, time: number) {
+  draw(ctx: CanvasRenderingContext2D) {
     this.paths.forEach((path, i) => {
       ctx.fillStyle = CELL_FILL[this.cells[i]];
       ctx.fill(path);
@@ -260,21 +260,12 @@ export class Course {
       ctx.beginPath();
       this.polygons.forEach((poly, i) => match(this.cells[i]) && addOutline(ctx, poly, width));
     };
-    outlines((c) => c !== "black" && c !== "goal", 1.5);
+    outlines((c) => c !== "black", 1.5);
     ctx.fillStyle = "rgba(20, 20, 24, 0.55)";
     ctx.fill();
     outlines((c) => c === "black", 1.5);
     ctx.fillStyle = "rgba(70, 70, 75, 0.8)";
     ctx.fill();
-
-    const pulse = 0.5 + 0.5 * Math.sin(time * 5);
-    ctx.save();
-    ctx.shadowColor = "#2ed573";
-    ctx.shadowBlur = 10 + 20 * pulse;
-    outlines((c) => c === "goal", 3);
-    ctx.fillStyle = `rgba(200, 255, 220, ${0.5 + 0.5 * pulse})`;
-    ctx.fill();
-    ctx.restore();
 
     // The sites the cells are computed from. Not in the frame or in black cells (start and goal included).
     if (!settings.showSites) return;

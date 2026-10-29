@@ -573,11 +573,14 @@ export class Game {
   }
 
   // Steering inside cell `site` between levels: no shooting, and every wall of the cell
-  // bounces you back instead of letting you out.
+  // bounces you back instead of letting you out. Both buttons stop you and letting go
+  // of one spins you on the spot, like in the race.
   private stepPenned(p: Player, s: Ship, site: number, dt: number) {
-    if (p.input.l && p.input.r) return;
+    if (p.input.l && p.input.r) { s.pivot = true; return; }
     if (p.input.l) s.a -= settings.shipTurn * dt;
     if (p.input.r) s.a += settings.shipTurn * dt;
+    if (!p.input.l && !p.input.r) s.pivot = false;
+    if (s.pivot) return;
     const dist = cellSpeed("goal") * dt;
     const x = s.x + Math.cos(s.a) * dist, y = s.y + Math.sin(s.a) * dist;
     const n = this.penWall(x, y, s, site);
@@ -723,7 +726,7 @@ export class Game {
     ctx.rect(0, 0, W, H);
     ctx.clip();
 
-    this.course.draw(ctx, this.time);
+    this.course.draw(ctx);
     for (const p of this.players.values()) this.drawTrail(p);
     for (const b of this.bullets) this.drawBullet(b);
     for (const p of this.players.values()) if (p.ship?.alive) this.drawShip(p, p.ship);
