@@ -275,11 +275,11 @@ export class Course {
     ctx.fill();
     ctx.restore();
 
-    // The sites the cells are computed from. Not in the frame (start and goal included).
+    // The sites the cells are computed from. Not in the frame or in black cells (start and goal included).
     if (!settings.showSites) return;
     ctx.beginPath();
     for (let i = 0; i < this.siteCount(); i++) {
-      if (this.isFrame(i)) continue;
+      if (this.isFrame(i) || this.cells[i] === "black") continue;
       const { x, y } = this.site(i);
       ctx.moveTo(x + 1.5, y);
       ctx.arc(x, y, 1.5, 0, Math.PI * 2);
