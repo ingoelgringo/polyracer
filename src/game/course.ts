@@ -232,6 +232,18 @@ export class Course {
     return this.cells[this.hint];
   }
 
+  // The fixed ring of cells around the edge (start and goal are always among them).
+  isFrame(i: number) {
+    return i >= 0 && i < this.frameCount;
+  }
+
+  // Index of the site whose cell holds the point.
+  siteAt(x: number, y: number) {
+    if (!this.delaunay) return -1;
+    this.hint = this.delaunay.find(x, y, this.hint);
+    return this.hint;
+  }
+
   // The screen edge is the only thing ships can't pass.
   isOutside(x: number, y: number) {
     return x < 0 || x > W || y < 0 || y > H;

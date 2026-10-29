@@ -10,6 +10,7 @@ const COUNTDOWN = 3;
 const LEVEL_OVER_TIME = 3.5;
 const RESULTS_TIME = 8;
 const LOBBY_RESPAWN = 1.5;
+const TURN_TIME = 3; // the last one home may turn around inside the goal this long after the level ends
 
 // Time limit = trip to the nearest goal at normal speed × this factor (+ a little).
 const TIME_FACTOR_START = 3.2;
@@ -18,8 +19,7 @@ const TIME_FACTOR_MIN = 1.6;
 
 const SHIP_RADIUS = 8; // at size 1. No drift: the ship always moves where its nose points.
 const SPAWN_RING = 45; // players start on a small ring around the middle
-const SLOT_GAP = 21; // spacing of ships lined up in a start or goal cell
-const PARK_EASE = 6; // how quickly a finished ship glides into its spot in the goal
+const SLOT_GAP = 21; // spacing of ships lined up in a start cell
 
 const TRAIL_STEP = 6; // px between trail points
 const TRAIL_JUMP = 40; // a gap this big is a respawn, not flight: don't connect it
@@ -37,8 +37,7 @@ interface Input { l: boolean; r: boolean }
 interface Ship {
   x: number; y: number; a: number;
   alive: boolean;
-  finished: boolean; // reached the green cell this level, parked there
-  parkX: number; parkY: number; // where it parks inside the goal
+  finished: boolean; // inside the green cell right now; you have to stay there until the level ends
   stopped: boolean; // both buttons held
   pivot: boolean; // came out of a stop with one button still held: turn on the spot until it's let go
   fireCd: number;
@@ -94,6 +93,8 @@ export class Game {
   private retry = false; // nobody made it: replay with the same players
   private matchWinner: Player | null = null;
   private soloLevels: number | null = null;
+  private lastHome: Player | null = null; // the latest to reach the green cell this level
+  private turnT = 0; // time lastHome has left to turn around in the goal between levels
   private keys = new Set<string>();
 
   private ws: WebSocket | null = null;
@@ -324,7 +325,7 @@ export class Game {
     const r = n <= 1 ? 0 : SPAWN_RING;
     return {
       x: W / 2 + Math.cos(a) * r, y: H / 2 + Math.sin(a) * r, a,
-      alive: true, finished: false, stopped: false, pivot: false, fireCd: 0, respawnT: 0, parkX: 0, parkY: 0,
+      alive: true, finished: false, stopped: false, pivot: false, fireCd: 0, respawnT: 0,
     };
   }
 
@@ -363,13 +364,16 @@ export class Game {
 
   private startLevel(advance: boolean) {
     // Level 1 starts in the middle. After that last level's green cell turns blue and
-    // everyone starts there; a retry starts from the same blue cell again.
+    // everyone carries on from where they stood when it ended; a retry lines everyone
+    // up in the same blue cell again.
     if (advance) this.level++;
     const start = advance ? (this.level === 1 ? -1 : this.course.goal) : this.course.start;
     this.course.setup(this.level, start);
     this.bullets = [];
     this.outcome = "";
     this.retry = false;
+    this.lastHome = null;
+    this.turnT = 0;
     const from = start >= 0 ? this.course.site(start) : { x: W / 2, y: H / 2 };
     const goal = this.course.site(this.course.goal);
     const factor = Math.max(TIME_FACTOR_MIN, TIME_FACTOR_START - TIME_FACTOR_STEP * (this.level - 1)) * settings.timeScale;
@@ -377,9 +381,14 @@ export class Game {
     this.timeLeft = Math.ceil((Math.hypot(goal.x - from.x, goal.y - from.y) / speed) * factor + 2);
 
     const list = [...this.players.values()];
+    const was = new Map(list.map((p) => [p, p.ship]));
     for (const p of list) p.ship = null;
     const racing = list.filter((p) => !p.out);
-    racing.forEach((p, i) => (p.ship = start >= 0 ? this.spawnInStart(i) : this.spawnShip(i, racing.length)));
+    racing.forEach((p, i) => {
+      const old = was.get(p);
+      if (advance && this.level > 1 && old?.alive) p.ship = Object.assign(this.spawnShip(0, 1), { x: old.x, y: old.y, a: old.a });
+      else p.ship = start >= 0 ? this.spawnInStart(i) : this.spawnShip(i, racing.length);
+    });
     this.setPhase("countdown", COUNTDOWN);
   }
 
@@ -410,6 +419,7 @@ export class Game {
     const lastStanding = contenders.length >= 2 && standing.length === 1;
     const through = lastStanding ? standing : contenders.filter((p) => p.ship!.finished);
     for (const p of through) p.levels++;
+    if (this.lastHome?.ship?.finished) this.turnT = TURN_TIME;
 
     if (contenders.length <= 1) {
       // Solo: keep going until the clock wins.
@@ -468,6 +478,11 @@ export class Game {
       for (const p of this.players.values()) if (p.ship) this.stepShip(p, p.ship, dt);
       this.collideShips();
     }
+    if (this.phase === "levelover" && this.turnT > 0) {
+      this.turnT -= dt;
+      const s = this.lastHome?.ship;
+      if (s?.alive) this.stepPenned(this.lastHome!, s, dt);
+    }
     this.stepBullets(dt);
     this.stepParticles(dt);
     this.stepTrails();
@@ -488,18 +503,25 @@ export class Game {
     } else if (this.phase === "results") this.backToLobby();
   }
 
-  private hitsWall(x: number, y: number, a: number) {
+  // How far the hull pokes out past the screen edge (0 when it's all inside).
+  private wallDepth(x: number, y: number, a: number) {
     const k = settings.shipSize, c = Math.cos(a) * k, s = Math.sin(a) * k;
-    return HULL.some(([dx, dy]) => this.course.isOutside(x + dx * c - dy * s, y + dx * s + dy * c));
+    let depth = 0;
+    for (const [dx, dy] of HULL) {
+      const px = x + dx * c - dy * s, py = y + dx * s + dy * c;
+      depth = Math.max(depth, -px, px - W, -py, py - H);
+    }
+    return depth;
+  }
+
+  // Turning isn't checked, so a ship by the edge can end up poking out of the screen.
+  // Any move that doesn't push it further out is allowed, so it can always get back.
+  private hitsWall(x: number, y: number, s: Ship) {
+    return this.wallDepth(x, y, s.a) > this.wallDepth(s.x, s.y, s.a) + 1e-6;
   }
 
   private stepShip(p: Player, s: Ship, dt: number) {
-    if (s.alive && s.finished) {
-      const k = 1 - Math.exp(-PARK_EASE * dt);
-      s.x += (s.parkX - s.x) * k;
-      s.y += (s.parkY - s.y) * k;
-    }
-    if (!s.alive || s.finished) {
+    if (!s.alive) {
       // In the lobby you pop back up in the middle and keep playing.
       if (this.phase === "lobby" && (s.respawnT -= dt) <= 0) Object.assign(s, this.spawnShip(0, 1));
       return;
@@ -525,32 +547,80 @@ export class Game {
     if (!p.input.l && !p.input.r) s.pivot = false;
     if (s.pivot) return;
     const speed = cellSpeed(this.course.cellAt(s.x, s.y));
-    const dx = Math.cos(s.a) * speed * dt, dy = Math.sin(s.a) * speed * dt;
+    const start = this.course.start;
+    if (this.phase === "race" && start >= 0 && this.course.siteAt(s.x, s.y) === start) {
+      // The blue cell is open towards the field only: its other walls still bounce you.
+      this.penMove(p, s, speed * dt, start, true);
+    } else {
+      const dx = Math.cos(s.a) * speed * dt, dy = Math.sin(s.a) * speed * dt;
+      // Black cells are just very slow; the screen edge is the wall. Slide along it.
+      if (!this.hitsWall(s.x + dx, s.y + dy, s)) { s.x += dx; s.y += dy; }
+      else if (!this.hitsWall(s.x + dx, s.y, s)) s.x += dx;
+      else if (!this.hitsWall(s.x, s.y + dy, s)) s.y += dy;
+      this.addTrail(p, s);
+    }
 
-    // Black cells are just very slow; the screen edge is the wall. Slide along it.
-    if (!this.hitsWall(s.x + dx, s.y + dy, s.a)) { s.x += dx; s.y += dy; }
-    else if (!this.hitsWall(s.x + dx, s.y, s.a)) s.x += dx;
-    else if (!this.hitsWall(s.x, s.y + dy, s.a)) s.y += dy;
-    this.addTrail(p, s);
-
-    if (this.course.cellAt(s.x, s.y) === "goal") this.finish(p, s);
+    // Home only counts while you're in the green cell: fly out again and you're racing.
+    const home = this.phase === "race" && this.course.cellAt(s.x, s.y) === "goal";
+    if (home !== s.finished) {
+      s.finished = home;
+      if (home) this.lastHome = p;
+      this.sendStatus(p);
+    }
   }
 
-  private finish(p: Player, s: Ship) {
-    const parked = [...this.players.values()].filter((q) => q.ship?.alive && q.ship.finished).length;
-    const spot = this.slot(this.course.goal, parked);
-    s.finished = true;
-    s.stopped = false;
-    s.parkX = spot.x;
-    s.parkY = spot.y;
-    s.respawnT = LOBBY_RESPAWN;
-    this.burst(s.x, s.y, "#2ed573", 30);
-    this.burst(s.x, s.y, p.color, 20);
-    this.sendStatus(p);
+  // Steering inside the goal after the level is over: no shooting, and every wall of
+  // the goal bounces you back instead of letting you out.
+  private stepPenned(p: Player, s: Ship, dt: number) {
+    if (p.input.l && p.input.r) return;
+    if (p.input.l) s.a -= settings.shipTurn * dt;
+    if (p.input.r) s.a += settings.shipTurn * dt;
+    this.penMove(p, s, cellSpeed("goal") * dt, this.course.goal, false);
+  }
+
+  // Moves `dist` inside cell `site`, bouncing off its walls. With `open` the walls
+  // towards the field let you through and only those to the frame and screen edge bounce.
+  private penMove(p: Player, s: Ship, dist: number, site: number, open: boolean) {
+    const x = s.x + Math.cos(s.a) * dist, y = s.y + Math.sin(s.a) * dist;
+    const n = this.penWall(x, y, s, site, open);
+    if (!n) { s.x = x; s.y = y; this.addTrail(p, s); return; }
+    // Mirror the heading in the wall, if we're heading into it.
+    const vx = Math.cos(s.a), vy = Math.sin(s.a), d = vx * n.x + vy * n.y;
+    if (d > 0) s.a = Math.atan2(vy - 2 * d * n.y, vx - 2 * d * n.x);
+  }
+
+  // Outward normal of the wall the ship would hit moving to (x, y), or null if it may go
+  // there. Like reaching home, leaving the cell counts by the ship's middle; the screen
+  // edge stops the whole hull.
+  private penWall(x: number, y: number, s: Ship, site: number, open: boolean) {
+    if (this.hitsWall(x, y, s)) {
+      // Bounce off whichever screen edge the move pushes further into.
+      const out = (cx: number, cy: number) => {
+        const k = settings.shipSize, c = Math.cos(s.a) * k, sn = Math.sin(s.a) * k;
+        const d = [0, 0, 0, 0]; // left, right, top, bottom
+        for (const [dx, dy] of HULL) {
+          const px = cx + dx * c - dy * sn, py = cy + dx * sn + dy * c;
+          d[0] = Math.max(d[0], -px); d[1] = Math.max(d[1], px - W);
+          d[2] = Math.max(d[2], -py); d[3] = Math.max(d[3], py - H);
+        }
+        return d;
+      };
+      const now = out(s.x, s.y), next = out(x, y);
+      const e = [0, 1, 2, 3].reduce((m, i) => (next[i] - now[i] > next[m] - now[m] ? i : m), 0);
+      return [{ x: -1, y: 0 }, { x: 1, y: 0 }, { x: 0, y: -1 }, { x: 0, y: 1 }][e];
+    }
+    const j = this.course.siteAt(x, y);
+    if (j !== site && !(open && !this.course.isFrame(j))) {
+      // Voronoi edges are halfway between two sites, square to the line joining them.
+      const c = this.course.site(site), o = this.course.site(j);
+      const len = Math.hypot(o.x - c.x, o.y - c.y) || 1;
+      return { x: (o.x - c.x) / len, y: (o.y - c.y) / len };
+    }
+    return null;
   }
 
   private collideShips() {
-    const ships = this.contenders().map((p) => p.ship!).filter((s) => s.alive && !s.finished);
+    const ships = this.contenders().map((p) => p.ship!).filter((s) => s.alive);
     const r = SHIP_RADIUS * settings.shipSize;
     for (let i = 0; i < ships.length; i++) {
       for (let j = i + 1; j < ships.length; j++) {
@@ -559,8 +629,8 @@ export class Game {
         const d = Math.hypot(dx, dy);
         if (d === 0 || d > r * 2) continue;
         const nx = dx / d, ny = dy / d, push = (r * 2 - d) / 2;
-        if (!this.hitsWall(a.x - nx * push, a.y - ny * push, a.a)) { a.x -= nx * push; a.y -= ny * push; }
-        if (!this.hitsWall(b.x + nx * push, b.y + ny * push, b.a)) { b.x += nx * push; b.y += ny * push; }
+        if (!this.hitsWall(a.x - nx * push, a.y - ny * push, a)) { a.x -= nx * push; a.y -= ny * push; }
+        if (!this.hitsWall(b.x + nx * push, b.y + ny * push, b)) { b.x += nx * push; b.y += ny * push; }
       }
     }
   }
@@ -572,7 +642,7 @@ export class Game {
       b.x += Math.cos(b.a) * speed * dt;
       b.y += Math.sin(b.a) * speed * dt;
       // Gone once it has slid fully off the screen.
-      const r = b.shrapnel ? 2 : 3;
+      const r = b.shrapnel ? 1.5 : 2;
       if (b.x < -r || b.x > W + r || b.y < -r || b.y > H + r) {
         b.life = 0;
         continue;
@@ -713,7 +783,7 @@ export class Game {
   private drawBullet(b: Bullet) {
     const ctx = this.ctx;
     ctx.beginPath();
-    ctx.arc(b.x, b.y, b.shrapnel ? 2 : 3, 0, Math.PI * 2);
+    ctx.arc(b.x, b.y, b.shrapnel ? 1.5 : 2, 0, Math.PI * 2);
     ctx.fillStyle = b.owner.color;
     ctx.fill();
   }
