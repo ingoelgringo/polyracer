@@ -8,8 +8,10 @@ A couch party game. The TV shows a field of Voronoi polygons and the phones are 
 - Each ship leaves a trail of where it has flown. The trail fades after a few seconds.
 - **Black** cells make up the frame. You can fly into them, but only at a crawl. Bullets fly straight through. One of them is the **green** goal. The screen edge is the only real wall.
 - From level 2, black cells spread onto the field too, a few more each level. The number of cells never changes, only how many of them are black.
-- Once you reach the green cell you park there and wait for the others. When the clock runs out, anyone who hasn't made it is out.
-- The next level starts in that cell. It turns **blue** and a new green cell appears somewhere else.
+- The level ends when every ship still alive is in the green cell, or when the clock runs out. Anyone who hasn't made it by then is out. Until then you can fly out of the green cell again, into the black frame too.
+- Once the level is over, the ships in the green cell can steer around inside it and bounce off all its walls.
+- The next level starts in that cell. It turns **blue** and a new green cell appears somewhere else. You keep bouncing around in it through the countdown, and when the race starts its walls open again.
+- The screen edge is the only wall that always bounces you.
 - Ships always move forward. They turn instantly, with no drift.
 - Get to a green cell in time without being shot and you're through to the next level. Anyone else is out.
 - If nobody makes it, the same players replay from the same blue cell with a new goal. When only one player is left, that player wins.

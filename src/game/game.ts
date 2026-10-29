@@ -10,7 +10,6 @@ const COUNTDOWN = 3;
 const LEVEL_OVER_TIME = 3.5;
 const RESULTS_TIME = 8;
 const LOBBY_RESPAWN = 1.5;
-const TURN_TIME = 3; // the last one home may turn around inside the goal this long after the level ends
 
 // Time limit = trip to the nearest goal at normal speed × this factor (+ a little).
 const TIME_FACTOR_START = 3.2;
@@ -94,8 +93,6 @@ export class Game {
   private retry = false; // nobody made it: replay with the same players
   private matchWinner: Player | null = null;
   private soloLevels: number | null = null;
-  private lastHome: Player | null = null; // the latest to reach the green cell this level
-  private turnT = 0; // time lastHome has left to turn around in the goal between levels
   private keys = new Set<string>();
 
   private ws: WebSocket | null = null;
@@ -373,8 +370,6 @@ export class Game {
     this.bullets = [];
     this.outcome = "";
     this.retry = false;
-    this.lastHome = null;
-    this.turnT = 0;
     const from = start >= 0 ? this.course.site(start) : { x: W / 2, y: H / 2 };
     const goal = this.course.site(this.course.goal);
     const factor = Math.max(TIME_FACTOR_MIN, TIME_FACTOR_START - TIME_FACTOR_STEP * (this.level - 1)) * settings.timeScale;
@@ -420,7 +415,6 @@ export class Game {
     const lastStanding = contenders.length >= 2 && standing.length === 1;
     const through = lastStanding ? standing : contenders.filter((p) => p.ship!.finished);
     for (const p of through) p.levels++;
-    if (this.lastHome?.ship?.finished) this.turnT = TURN_TIME;
 
     if (contenders.length <= 1) {
       // Solo: keep going until the clock wins.
@@ -479,10 +473,14 @@ export class Game {
       for (const p of this.players.values()) if (p.ship) this.stepShip(p, p.ship, dt);
       this.collideShips();
     }
-    if (this.phase === "levelover" && this.turnT > 0) {
-      this.turnT -= dt;
-      const s = this.lastHome?.ship;
-      if (s?.alive) this.stepPenned(this.lastHome!, s, dt);
+    // Between levels the ships home bounce around inside the goal, and once it has
+    // turned blue they keep bouncing in there through the countdown.
+    const pen = this.phase === "levelover" ? this.course.goal : this.phase === "countdown" ? this.course.start : -1;
+    if (pen >= 0) {
+      for (const p of this.contenders()) {
+        const s = p.ship!;
+        if (s.alive && (this.phase === "countdown" || s.finished)) this.stepPenned(p, s, pen, dt);
+      }
     }
     this.stepBullets(dt);
     this.stepParticles(dt);
@@ -550,42 +548,30 @@ export class Game {
     if (!p.input.l && !p.input.r) s.pivot = false;
     if (s.pivot) return;
     const speed = cellSpeed(this.course.cellAt(s.x, s.y)) * (1 - s.recover);
-    const start = this.course.start;
-    if (this.phase === "race" && start >= 0 && this.course.siteAt(s.x, s.y) === start) {
-      // The blue cell is open towards the field only: its other walls still bounce you.
-      this.penMove(p, s, speed * dt, start, true);
-    } else {
-      const dx = Math.cos(s.a) * speed * dt, dy = Math.sin(s.a) * speed * dt;
-      // Black cells are just very slow; the screen edge is the wall. Slide along it.
-      if (!this.hitsWall(s.x + dx, s.y + dy, s)) { s.x += dx; s.y += dy; }
-      else if (!this.hitsWall(s.x + dx, s.y, s)) s.x += dx;
-      else if (!this.hitsWall(s.x, s.y + dy, s)) s.y += dy;
-      this.addTrail(p, s);
-    }
+    const dx = Math.cos(s.a) * speed * dt, dy = Math.sin(s.a) * speed * dt;
+    // Black cells are just very slow; the screen edge is the wall. Slide along it.
+    if (!this.hitsWall(s.x + dx, s.y + dy, s)) { s.x += dx; s.y += dy; }
+    else if (!this.hitsWall(s.x + dx, s.y, s)) s.x += dx;
+    else if (!this.hitsWall(s.x, s.y + dy, s)) s.y += dy;
+    this.addTrail(p, s);
 
     // Home only counts while you're in the green cell: fly out again and you're racing.
     const home = this.phase === "race" && this.course.cellAt(s.x, s.y) === "goal";
     if (home !== s.finished) {
       s.finished = home;
-      if (home) this.lastHome = p;
       this.sendStatus(p);
     }
   }
 
-  // Steering inside the goal after the level is over: no shooting, and every wall of
-  // the goal bounces you back instead of letting you out.
-  private stepPenned(p: Player, s: Ship, dt: number) {
+  // Steering inside cell `site` between levels: no shooting, and every wall of the cell
+  // bounces you back instead of letting you out.
+  private stepPenned(p: Player, s: Ship, site: number, dt: number) {
     if (p.input.l && p.input.r) return;
     if (p.input.l) s.a -= settings.shipTurn * dt;
     if (p.input.r) s.a += settings.shipTurn * dt;
-    this.penMove(p, s, cellSpeed("goal") * dt, this.course.goal, false);
-  }
-
-  // Moves `dist` inside cell `site`, bouncing off its walls. With `open` the walls
-  // towards the field let you through and only those to the frame and screen edge bounce.
-  private penMove(p: Player, s: Ship, dist: number, site: number, open: boolean) {
+    const dist = cellSpeed("goal") * dt;
     const x = s.x + Math.cos(s.a) * dist, y = s.y + Math.sin(s.a) * dist;
-    const n = this.penWall(x, y, s, site, open);
+    const n = this.penWall(x, y, s, site);
     if (!n) { s.x = x; s.y = y; this.addTrail(p, s); return; }
     // Mirror the heading in the wall, if we're heading into it.
     const vx = Math.cos(s.a), vy = Math.sin(s.a), d = vx * n.x + vy * n.y;
@@ -595,7 +581,7 @@ export class Game {
   // Outward normal of the wall the ship would hit moving to (x, y), or null if it may go
   // there. Like reaching home, leaving the cell counts by the ship's middle; the screen
   // edge stops the whole hull.
-  private penWall(x: number, y: number, s: Ship, site: number, open: boolean) {
+  private penWall(x: number, y: number, s: Ship, site: number) {
     if (this.hitsWall(x, y, s)) {
       // Bounce off whichever screen edge the move pushes further into.
       const out = (cx: number, cy: number) => {
@@ -613,7 +599,7 @@ export class Game {
       return [{ x: -1, y: 0 }, { x: 1, y: 0 }, { x: 0, y: -1 }, { x: 0, y: 1 }][e];
     }
     const j = this.course.siteAt(x, y);
-    if (j !== site && !(open && !this.course.isFrame(j))) {
+    if (j !== site) {
       // Voronoi edges are halfway between two sites, square to the line joining them.
       const c = this.course.site(site), o = this.course.site(j);
       const len = Math.hypot(o.x - c.x, o.y - c.y) || 1;
